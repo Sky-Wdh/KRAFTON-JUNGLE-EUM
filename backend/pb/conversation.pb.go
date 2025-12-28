@@ -262,6 +262,7 @@ type ChatResponse struct {
 	//	*ChatResponse_TranscriptFinal
 	//	*ChatResponse_TextResponse
 	//	*ChatResponse_Error
+	//	*ChatResponse_AudioResponse
 	Payload       isChatResponse_Payload `protobuf_oneof:"payload"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
@@ -356,12 +357,21 @@ func (x *ChatResponse) GetError() *ErrorResponse {
 	return nil
 }
 
+func (x *ChatResponse) GetAudioResponse() *AudioResponse {
+	if x != nil {
+		if x, ok := x.Payload.(*ChatResponse_AudioResponse); ok {
+			return x.AudioResponse
+		}
+	}
+	return nil
+}
+
 type isChatResponse_Payload interface {
 	isChatResponse_Payload()
 }
 
 type ChatResponse_AudioChunk struct {
-	// TTS 오디오 청크
+	// TTS 오디오 청크 (raw bytes - deprecated)
 	AudioChunk []byte `protobuf:"bytes,2,opt,name=audio_chunk,json=audioChunk,proto3,oneof"`
 }
 
@@ -385,6 +395,11 @@ type ChatResponse_Error struct {
 	Error *ErrorResponse `protobuf:"bytes,6,opt,name=error,proto3,oneof"`
 }
 
+type ChatResponse_AudioResponse struct {
+	// TTS 오디오 응답 (메타데이터 포함)
+	AudioResponse *AudioResponse `protobuf:"bytes,7,opt,name=audio_response,json=audioResponse,proto3,oneof"`
+}
+
 func (*ChatResponse_AudioChunk) isChatResponse_Payload() {}
 
 func (*ChatResponse_TranscriptPartial) isChatResponse_Payload() {}
@@ -394,6 +409,69 @@ func (*ChatResponse_TranscriptFinal) isChatResponse_Payload() {}
 func (*ChatResponse_TextResponse) isChatResponse_Payload() {}
 
 func (*ChatResponse_Error) isChatResponse_Payload() {}
+
+func (*ChatResponse_AudioResponse) isChatResponse_Payload() {}
+
+// TTS 오디오 응답
+type AudioResponse struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	AudioData     []byte                 `protobuf:"bytes,1,opt,name=audio_data,json=audioData,proto3" json:"audio_data,omitempty"`     // 오디오 바이트 (MP3/PCM)
+	Format        string                 `protobuf:"bytes,2,opt,name=format,proto3" json:"format,omitempty"`                            // 포맷 (예: "mp3", "pcm")
+	SampleRate    uint32                 `protobuf:"varint,3,opt,name=sample_rate,json=sampleRate,proto3" json:"sample_rate,omitempty"` // 샘플레이트 (예: 24000)
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *AudioResponse) Reset() {
+	*x = AudioResponse{}
+	mi := &file_conversation_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *AudioResponse) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*AudioResponse) ProtoMessage() {}
+
+func (x *AudioResponse) ProtoReflect() protoreflect.Message {
+	mi := &file_conversation_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use AudioResponse.ProtoReflect.Descriptor instead.
+func (*AudioResponse) Descriptor() ([]byte, []int) {
+	return file_conversation_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *AudioResponse) GetAudioData() []byte {
+	if x != nil {
+		return x.AudioData
+	}
+	return nil
+}
+
+func (x *AudioResponse) GetFormat() string {
+	if x != nil {
+		return x.Format
+	}
+	return ""
+}
+
+func (x *AudioResponse) GetSampleRate() uint32 {
+	if x != nil {
+		return x.SampleRate
+	}
+	return 0
+}
 
 // STT 중간 결과 (실시간 자막)
 type TranscriptPartial struct {
@@ -406,7 +484,7 @@ type TranscriptPartial struct {
 
 func (x *TranscriptPartial) Reset() {
 	*x = TranscriptPartial{}
-	mi := &file_conversation_proto_msgTypes[4]
+	mi := &file_conversation_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -418,7 +496,7 @@ func (x *TranscriptPartial) String() string {
 func (*TranscriptPartial) ProtoMessage() {}
 
 func (x *TranscriptPartial) ProtoReflect() protoreflect.Message {
-	mi := &file_conversation_proto_msgTypes[4]
+	mi := &file_conversation_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -431,7 +509,7 @@ func (x *TranscriptPartial) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscriptPartial.ProtoReflect.Descriptor instead.
 func (*TranscriptPartial) Descriptor() ([]byte, []int) {
-	return file_conversation_proto_rawDescGZIP(), []int{4}
+	return file_conversation_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *TranscriptPartial) GetText() string {
@@ -461,7 +539,7 @@ type TranscriptFinal struct {
 
 func (x *TranscriptFinal) Reset() {
 	*x = TranscriptFinal{}
-	mi := &file_conversation_proto_msgTypes[5]
+	mi := &file_conversation_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -473,7 +551,7 @@ func (x *TranscriptFinal) String() string {
 func (*TranscriptFinal) ProtoMessage() {}
 
 func (x *TranscriptFinal) ProtoReflect() protoreflect.Message {
-	mi := &file_conversation_proto_msgTypes[5]
+	mi := &file_conversation_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -486,7 +564,7 @@ func (x *TranscriptFinal) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TranscriptFinal.ProtoReflect.Descriptor instead.
 func (*TranscriptFinal) Descriptor() ([]byte, []int) {
-	return file_conversation_proto_rawDescGZIP(), []int{5}
+	return file_conversation_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *TranscriptFinal) GetText() string {
@@ -528,7 +606,7 @@ type TextResponse struct {
 
 func (x *TextResponse) Reset() {
 	*x = TextResponse{}
-	mi := &file_conversation_proto_msgTypes[6]
+	mi := &file_conversation_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -540,7 +618,7 @@ func (x *TextResponse) String() string {
 func (*TextResponse) ProtoMessage() {}
 
 func (x *TextResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conversation_proto_msgTypes[6]
+	mi := &file_conversation_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -553,7 +631,7 @@ func (x *TextResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use TextResponse.ProtoReflect.Descriptor instead.
 func (*TextResponse) Descriptor() ([]byte, []int) {
-	return file_conversation_proto_rawDescGZIP(), []int{6}
+	return file_conversation_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *TextResponse) GetText() string {
@@ -581,7 +659,7 @@ type ErrorResponse struct {
 
 func (x *ErrorResponse) Reset() {
 	*x = ErrorResponse{}
-	mi := &file_conversation_proto_msgTypes[7]
+	mi := &file_conversation_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -593,7 +671,7 @@ func (x *ErrorResponse) String() string {
 func (*ErrorResponse) ProtoMessage() {}
 
 func (x *ErrorResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_conversation_proto_msgTypes[7]
+	mi := &file_conversation_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -606,7 +684,7 @@ func (x *ErrorResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ErrorResponse.ProtoReflect.Descriptor instead.
 func (*ErrorResponse) Descriptor() ([]byte, []int) {
-	return file_conversation_proto_rawDescGZIP(), []int{7}
+	return file_conversation_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *ErrorResponse) GetCode() string {
@@ -645,7 +723,7 @@ const file_conversation_proto_rawDesc = "" +
 	"\blanguage\x18\x04 \x01(\tR\blanguage\"$\n" +
 	"\n" +
 	"SessionEnd\x12\x16\n" +
-	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xf1\x02\n" +
+	"\x06reason\x18\x01 \x01(\tR\x06reason\"\xb7\x03\n" +
 	"\fChatResponse\x12\x1d\n" +
 	"\n" +
 	"session_id\x18\x01 \x01(\tR\tsessionId\x12!\n" +
@@ -654,8 +732,15 @@ const file_conversation_proto_rawDesc = "" +
 	"\x12transcript_partial\x18\x03 \x01(\v2\x1f.conversation.TranscriptPartialH\x00R\x11transcriptPartial\x12J\n" +
 	"\x10transcript_final\x18\x04 \x01(\v2\x1d.conversation.TranscriptFinalH\x00R\x0ftranscriptFinal\x12A\n" +
 	"\rtext_response\x18\x05 \x01(\v2\x1a.conversation.TextResponseH\x00R\ftextResponse\x123\n" +
-	"\x05error\x18\x06 \x01(\v2\x1b.conversation.ErrorResponseH\x00R\x05errorB\t\n" +
-	"\apayload\"G\n" +
+	"\x05error\x18\x06 \x01(\v2\x1b.conversation.ErrorResponseH\x00R\x05error\x12D\n" +
+	"\x0eaudio_response\x18\a \x01(\v2\x1b.conversation.AudioResponseH\x00R\raudioResponseB\t\n" +
+	"\apayload\"g\n" +
+	"\rAudioResponse\x12\x1d\n" +
+	"\n" +
+	"audio_data\x18\x01 \x01(\fR\taudioData\x12\x16\n" +
+	"\x06format\x18\x02 \x01(\tR\x06format\x12\x1f\n" +
+	"\vsample_rate\x18\x03 \x01(\rR\n" +
+	"sampleRate\"G\n" +
 	"\x11TranscriptPartial\x12\x12\n" +
 	"\x04text\x18\x01 \x01(\tR\x04text\x12\x1e\n" +
 	"\n" +
@@ -690,31 +775,33 @@ func file_conversation_proto_rawDescGZIP() []byte {
 	return file_conversation_proto_rawDescData
 }
 
-var file_conversation_proto_msgTypes = make([]protoimpl.MessageInfo, 8)
+var file_conversation_proto_msgTypes = make([]protoimpl.MessageInfo, 9)
 var file_conversation_proto_goTypes = []any{
 	(*ChatRequest)(nil),       // 0: conversation.ChatRequest
 	(*SessionInit)(nil),       // 1: conversation.SessionInit
 	(*SessionEnd)(nil),        // 2: conversation.SessionEnd
 	(*ChatResponse)(nil),      // 3: conversation.ChatResponse
-	(*TranscriptPartial)(nil), // 4: conversation.TranscriptPartial
-	(*TranscriptFinal)(nil),   // 5: conversation.TranscriptFinal
-	(*TextResponse)(nil),      // 6: conversation.TextResponse
-	(*ErrorResponse)(nil),     // 7: conversation.ErrorResponse
+	(*AudioResponse)(nil),     // 4: conversation.AudioResponse
+	(*TranscriptPartial)(nil), // 5: conversation.TranscriptPartial
+	(*TranscriptFinal)(nil),   // 6: conversation.TranscriptFinal
+	(*TextResponse)(nil),      // 7: conversation.TextResponse
+	(*ErrorResponse)(nil),     // 8: conversation.ErrorResponse
 }
 var file_conversation_proto_depIdxs = []int32{
 	1, // 0: conversation.ChatRequest.session_init:type_name -> conversation.SessionInit
 	2, // 1: conversation.ChatRequest.session_end:type_name -> conversation.SessionEnd
-	4, // 2: conversation.ChatResponse.transcript_partial:type_name -> conversation.TranscriptPartial
-	5, // 3: conversation.ChatResponse.transcript_final:type_name -> conversation.TranscriptFinal
-	6, // 4: conversation.ChatResponse.text_response:type_name -> conversation.TextResponse
-	7, // 5: conversation.ChatResponse.error:type_name -> conversation.ErrorResponse
-	0, // 6: conversation.ConversationService.StreamChat:input_type -> conversation.ChatRequest
-	3, // 7: conversation.ConversationService.StreamChat:output_type -> conversation.ChatResponse
-	7, // [7:8] is the sub-list for method output_type
-	6, // [6:7] is the sub-list for method input_type
-	6, // [6:6] is the sub-list for extension type_name
-	6, // [6:6] is the sub-list for extension extendee
-	0, // [0:6] is the sub-list for field type_name
+	5, // 2: conversation.ChatResponse.transcript_partial:type_name -> conversation.TranscriptPartial
+	6, // 3: conversation.ChatResponse.transcript_final:type_name -> conversation.TranscriptFinal
+	7, // 4: conversation.ChatResponse.text_response:type_name -> conversation.TextResponse
+	8, // 5: conversation.ChatResponse.error:type_name -> conversation.ErrorResponse
+	4, // 6: conversation.ChatResponse.audio_response:type_name -> conversation.AudioResponse
+	0, // 7: conversation.ConversationService.StreamChat:input_type -> conversation.ChatRequest
+	3, // 8: conversation.ConversationService.StreamChat:output_type -> conversation.ChatResponse
+	8, // [8:9] is the sub-list for method output_type
+	7, // [7:8] is the sub-list for method input_type
+	7, // [7:7] is the sub-list for extension type_name
+	7, // [7:7] is the sub-list for extension extendee
+	0, // [0:7] is the sub-list for field type_name
 }
 
 func init() { file_conversation_proto_init() }
@@ -733,6 +820,7 @@ func file_conversation_proto_init() {
 		(*ChatResponse_TranscriptFinal)(nil),
 		(*ChatResponse_TextResponse)(nil),
 		(*ChatResponse_Error)(nil),
+		(*ChatResponse_AudioResponse)(nil),
 	}
 	type x struct{}
 	out := protoimpl.TypeBuilder{
@@ -740,7 +828,7 @@ func file_conversation_proto_init() {
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_conversation_proto_rawDesc), len(file_conversation_proto_rawDesc)),
 			NumEnums:      0,
-			NumMessages:   8,
+			NumMessages:   9,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

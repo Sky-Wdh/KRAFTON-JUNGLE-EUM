@@ -24,7 +24,7 @@ _sym_db = _symbol_database.Default()
 
 
 
-DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x63onversation.proto\x12\x0c\x63onversation\"\xa7\x01\n\x0b\x43hatRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x0b\x61udio_chunk\x18\x02 \x01(\x0cH\x00\x12\x31\n\x0csession_init\x18\x03 \x01(\x0b\x32\x19.conversation.SessionInitH\x00\x12/\n\x0bsession_end\x18\x04 \x01(\x0b\x32\x18.conversation.SessionEndH\x00\x42\t\n\x07payload\"_\n\x0bSessionInit\x12\x13\n\x0bsample_rate\x18\x01 \x01(\r\x12\x10\n\x08\x63hannels\x18\x02 \x01(\r\x12\x17\n\x0f\x62its_per_sample\x18\x03 \x01(\r\x12\x10\n\x08language\x18\x04 \x01(\t\"\x1c\n\nSessionEnd\x12\x0e\n\x06reason\x18\x01 \x01(\t\"\xa1\x02\n\x0c\x43hatResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x0b\x61udio_chunk\x18\x02 \x01(\x0cH\x00\x12=\n\x12transcript_partial\x18\x03 \x01(\x0b\x32\x1f.conversation.TranscriptPartialH\x00\x12\x39\n\x10transcript_final\x18\x04 \x01(\x0b\x32\x1d.conversation.TranscriptFinalH\x00\x12\x33\n\rtext_response\x18\x05 \x01(\x0b\x32\x1a.conversation.TextResponseH\x00\x12,\n\x05\x65rror\x18\x06 \x01(\x0b\x32\x1b.conversation.ErrorResponseH\x00\x42\t\n\x07payload\"5\n\x11TranscriptPartial\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\"_\n\x0fTranscriptFinal\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12\x15\n\rstart_time_ms\x18\x03 \x01(\x04\x12\x13\n\x0b\x65nd_time_ms\x18\x04 \x01(\x04\".\n\x0cTextResponse\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x10\n\x08is_final\x18\x02 \x01(\x08\".\n\rErrorResponse\x12\x0c\n\x04\x63ode\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t2^\n\x13\x43onversationService\x12G\n\nStreamChat\x12\x19.conversation.ChatRequest\x1a\x1a.conversation.ChatResponse(\x01\x30\x01\x42\x18Z\x16realtime-backend/pb;pbb\x06proto3')
+DESCRIPTOR = _descriptor_pool.Default().AddSerializedFile(b'\n\x12\x63onversation.proto\x12\x0c\x63onversation\"\xa7\x01\n\x0b\x43hatRequest\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x0b\x61udio_chunk\x18\x02 \x01(\x0cH\x00\x12\x31\n\x0csession_init\x18\x03 \x01(\x0b\x32\x19.conversation.SessionInitH\x00\x12/\n\x0bsession_end\x18\x04 \x01(\x0b\x32\x18.conversation.SessionEndH\x00\x42\t\n\x07payload\"_\n\x0bSessionInit\x12\x13\n\x0bsample_rate\x18\x01 \x01(\r\x12\x10\n\x08\x63hannels\x18\x02 \x01(\r\x12\x17\n\x0f\x62its_per_sample\x18\x03 \x01(\r\x12\x10\n\x08language\x18\x04 \x01(\t\"\x1c\n\nSessionEnd\x12\x0e\n\x06reason\x18\x01 \x01(\t\"\xd8\x02\n\x0c\x43hatResponse\x12\x12\n\nsession_id\x18\x01 \x01(\t\x12\x15\n\x0b\x61udio_chunk\x18\x02 \x01(\x0cH\x00\x12=\n\x12transcript_partial\x18\x03 \x01(\x0b\x32\x1f.conversation.TranscriptPartialH\x00\x12\x39\n\x10transcript_final\x18\x04 \x01(\x0b\x32\x1d.conversation.TranscriptFinalH\x00\x12\x33\n\rtext_response\x18\x05 \x01(\x0b\x32\x1a.conversation.TextResponseH\x00\x12,\n\x05\x65rror\x18\x06 \x01(\x0b\x32\x1b.conversation.ErrorResponseH\x00\x12\x35\n\x0e\x61udio_response\x18\x07 \x01(\x0b\x32\x1b.conversation.AudioResponseH\x00\x42\t\n\x07payload\"H\n\rAudioResponse\x12\x12\n\naudio_data\x18\x01 \x01(\x0c\x12\x0e\n\x06\x66ormat\x18\x02 \x01(\t\x12\x13\n\x0bsample_rate\x18\x03 \x01(\r\"5\n\x11TranscriptPartial\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\"_\n\x0fTranscriptFinal\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x12\n\nconfidence\x18\x02 \x01(\x02\x12\x15\n\rstart_time_ms\x18\x03 \x01(\x04\x12\x13\n\x0b\x65nd_time_ms\x18\x04 \x01(\x04\".\n\x0cTextResponse\x12\x0c\n\x04text\x18\x01 \x01(\t\x12\x10\n\x08is_final\x18\x02 \x01(\x08\".\n\rErrorResponse\x12\x0c\n\x04\x63ode\x18\x01 \x01(\t\x12\x0f\n\x07message\x18\x02 \x01(\t2^\n\x13\x43onversationService\x12G\n\nStreamChat\x12\x19.conversation.ChatRequest\x1a\x1a.conversation.ChatResponse(\x01\x30\x01\x42\x18Z\x16realtime-backend/pb;pbb\x06proto3')
 
 _globals = globals()
 _builder.BuildMessageAndEnumDescriptors(DESCRIPTOR, _globals)
@@ -39,15 +39,17 @@ if not _descriptor._USE_C_DESCRIPTORS:
   _globals['_SESSIONEND']._serialized_start=303
   _globals['_SESSIONEND']._serialized_end=331
   _globals['_CHATRESPONSE']._serialized_start=334
-  _globals['_CHATRESPONSE']._serialized_end=623
-  _globals['_TRANSCRIPTPARTIAL']._serialized_start=625
-  _globals['_TRANSCRIPTPARTIAL']._serialized_end=678
-  _globals['_TRANSCRIPTFINAL']._serialized_start=680
-  _globals['_TRANSCRIPTFINAL']._serialized_end=775
-  _globals['_TEXTRESPONSE']._serialized_start=777
-  _globals['_TEXTRESPONSE']._serialized_end=823
-  _globals['_ERRORRESPONSE']._serialized_start=825
-  _globals['_ERRORRESPONSE']._serialized_end=871
-  _globals['_CONVERSATIONSERVICE']._serialized_start=873
-  _globals['_CONVERSATIONSERVICE']._serialized_end=967
+  _globals['_CHATRESPONSE']._serialized_end=678
+  _globals['_AUDIORESPONSE']._serialized_start=680
+  _globals['_AUDIORESPONSE']._serialized_end=752
+  _globals['_TRANSCRIPTPARTIAL']._serialized_start=754
+  _globals['_TRANSCRIPTPARTIAL']._serialized_end=807
+  _globals['_TRANSCRIPTFINAL']._serialized_start=809
+  _globals['_TRANSCRIPTFINAL']._serialized_end=904
+  _globals['_TEXTRESPONSE']._serialized_start=906
+  _globals['_TEXTRESPONSE']._serialized_end=952
+  _globals['_ERRORRESPONSE']._serialized_start=954
+  _globals['_ERRORRESPONSE']._serialized_end=1000
+  _globals['_CONVERSATIONSERVICE']._serialized_start=1002
+  _globals['_CONVERSATIONSERVICE']._serialized_end=1096
 # @@protoc_insertion_point(module_scope)

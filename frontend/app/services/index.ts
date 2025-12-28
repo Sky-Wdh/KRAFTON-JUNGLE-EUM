@@ -1,4 +1,4 @@
-export { audioPlayer } from "./audioPlayer";
+export { audioPlayer, AudioPlayerService } from "./audioPlayer";
 export { audioProcessor } from "./audioProcessor";
 export { noiseSuppress } from "./noiseSuppress";
 export { audioSocket } from "./audioSocket";

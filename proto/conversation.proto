@@ -49,7 +49,7 @@ message ChatResponse {
 
   // 응답 타입 (oneof)
   oneof payload {
-    // TTS 오디오 청크
+    // TTS 오디오 청크 (raw bytes - deprecated)
     bytes audio_chunk = 2;
 
     // STT 중간 결과 (실시간 자막)
@@ -63,7 +63,17 @@ message ChatResponse {
 
     // 에러 응답
     ErrorResponse error = 6;
+
+    // TTS 오디오 응답 (메타데이터 포함)
+    AudioResponse audio_response = 7;
   }
+}
+
+// TTS 오디오 응답
+message AudioResponse {
+  bytes audio_data = 1;      // 오디오 바이트 (MP3/PCM)
+  string format = 2;         // 포맷 (예: "mp3", "pcm")
+  uint32 sample_rate = 3;    // 샘플레이트 (예: 24000)
 }
 
 // STT 중간 결과 (실시간 자막)

@@ -1,286 +1,262 @@
 """
-Python gRPC STT Server with faster-whisper
-Go ↔ Python 실시간 음성 인식 서버
+Python gRPC AI Server - v5 (Stable)
+48000 bytes = 1.5초 버퍼 + RMS 침묵 필터링
 """
 
 import sys
 import os
-import time
+import asyncio
 from concurrent import futures
 from datetime import datetime
 
 import grpc
 import numpy as np
+import torch
 from faster_whisper import WhisperModel
+from transformers import AutoModelForCausalLM, AutoTokenizer
+import edge_tts
 
-# generated 모듈 import 경로 추가
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
 from generated import conversation_pb2
 from generated import conversation_pb2_grpc
 
+# ============================================================================
+# 모델 로딩
+# ============================================================================
 
-# ========================================
-# Whisper 모델 초기화 (서버 시작 시 1회)
-# ========================================
-print("🔄 Loading Whisper model (tiny, CPU, int8)...")
-model = WhisperModel(
-    "tiny",
-    device="cpu",
-    compute_type="int8"
-)
-print("✅ Whisper model loaded successfully!")
+print("Loading models...")
+
+stt_model = WhisperModel("tiny", device="cpu", compute_type="int8")
+print("STT OK")
+
+llm_tokenizer = AutoTokenizer.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", trust_remote_code=True)
+llm_model = AutoModelForCausalLM.from_pretrained("Qwen/Qwen2.5-0.5B-Instruct", torch_dtype="auto", device_map="cpu", trust_remote_code=True)
+print("LLM OK")
+
+# ============================================================================
+# 설정: 48000 bytes = 1.5초 (16kHz, 16bit, mono)
+# ============================================================================
+
+CUT_BYTES = 48000  # 16000Hz * 2bytes * 1.5s = 48000 bytes
+RMS_THRESHOLD = 500  # int16 기준 RMS 임계값
+TTS_VOICE = "en-US-AriaNeural"
 
 
-class ConversationServicer(conversation_pb2_grpc.ConversationServiceServicer):
-    """STT Conversation Service - faster-whisper (Low Latency)"""
+# ============================================================================
+# RMS 계산 (침묵 감지용)
+# ============================================================================
+
+def calculate_rms(audio_bytes: bytes) -> float:
+    """int16 오디오 데이터의 RMS 계산"""
+    arr = np.frombuffer(audio_bytes, dtype=np.int16)
+    return np.sqrt(np.mean(arr.astype(np.float64) ** 2))
+
+
+# ============================================================================
+# TTS
+# ============================================================================
+
+def tts(text):
+    if not text.strip():
+        return b""
+    try:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        async def gen():
+            c = edge_tts.Communicate(text.strip(), TTS_VOICE)
+            data = b""
+            async for chunk in c.stream():
+                if chunk["type"] == "audio":
+                    data += chunk["data"]
+            return data
+
+        result = loop.run_until_complete(gen())
+        loop.close()
+        return result
+    except:
+        return b""
+
+
+# ============================================================================
+# LLM: 빈칸 채우기 모드
+# ============================================================================
+
+def translate(korean):
+    # 빈 텍스트 또는 "..." 스킵
+    text = korean.strip()
+    if not text or text == "..." or text == "…":
+        return ""
+
+    # 단순 빈칸 채우기 프롬프트
+    prompt = f"Korean: {text}\nEnglish:"
+
+    inputs = llm_tokenizer(prompt, return_tensors="pt").to(llm_model.device)
+
+    with torch.no_grad():
+        out = llm_model.generate(
+            **inputs,
+            max_new_tokens=30,  # 1.5초면 더 긴 문장 가능
+            do_sample=False,
+            pad_token_id=llm_tokenizer.eos_token_id
+        )
+
+    # 생성된 부분만 추출
+    generated = llm_tokenizer.decode(out[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
+
+    # 첫 줄만 (줄바꿈 이후 무시)
+    result = generated.split("\n")[0].strip()
+    return result
+
+
+# ============================================================================
+# gRPC 서비스
+# ============================================================================
+
+class Servicer(conversation_pb2_grpc.ConversationServiceServicer):
 
     def StreamChat(self, request_iterator, context):
-        """
-        양방향 스트리밍 RPC 핸들러
-        - SessionInit 수신: 세션 시작, 오디오 설정 저장
-        - AudioChunk 수신: 버퍼에 누적 → 0.5초 이상 시 STT 수행
-        - 인식 결과를 TranscriptPartial/TranscriptFinal로 반환
-        """
         session_id = None
-        audio_config = None
-        chunk_count = 0
-        total_bytes = 0
-        stt_count = 0
+        buf = bytearray()  # 오디오 버퍼
+        n = 0  # 처리 횟수
+        skip_count = 0  # 침묵 스킵 횟수
 
-        # 오디오 버퍼 (PCM bytes 누적)
-        audio_buffer = bytearray()
+        print(f"\n[{datetime.now().strftime('%H:%M:%S')}] Stream started")
 
-        # ========================================
-        # STT 설정 (Latency 최적화)
-        # ========================================
-        MIN_AUDIO_SECONDS = 0.5  # 0.5초 이상 누적 시 STT (기존 1.0초)
+        for req in request_iterator:
+            session_id = req.session_id
+            pt = req.WhichOneof('payload')
 
-        print(f"\n{'='*60}")
-        print(f"🔗 New gRPC stream connected at {datetime.now().strftime('%H:%M:%S')}")
-        print(f"{'='*60}")
+            if pt == 'session_init':
+                print(f"Session: {session_id[:8]}... | Cut @ {CUT_BYTES} bytes (1.5s) | RMS threshold: {RMS_THRESHOLD}")
+                yield conversation_pb2.ChatResponse(
+                    session_id=session_id,
+                    transcript_partial=conversation_pb2.TranscriptPartial(text="Ready", confidence=1.0)
+                )
 
-        try:
-            for request in request_iterator:
-                session_id = request.session_id
-                payload_type = request.WhichOneof('payload')
+            elif pt == 'audio_chunk':
+                buf.extend(req.audio_chunk)
 
-                # ========================================
-                # 1. SessionInit 처리
-                # ========================================
-                if payload_type == 'session_init':
-                    init = request.session_init
-                    audio_config = {
-                        'sample_rate': init.sample_rate,
-                        'channels': init.channels,
-                        'bits_per_sample': init.bits_per_sample,
-                        'language': init.language,
-                    }
-                    print(f"\n✅ 세션 시작: [{session_id[:8]}...]")
-                    print(f"   📋 SampleRate: {init.sample_rate}Hz")
-                    print(f"   📋 Channels: {init.channels}")
-                    print(f"   📋 BitsPerSample: {init.bits_per_sample}")
-                    print(f"   📋 Language: {init.language}")
+                # 1.5초 단위로 처리
+                while len(buf) >= CUT_BYTES:
+                    # 정확히 CUT_BYTES만큼만 추출
+                    chunk = bytes(buf[:CUT_BYTES])
+                    del buf[:CUT_BYTES]
 
-                    # TranscriptPartial로 세션 시작 알림
-                    yield conversation_pb2.ChatResponse(
-                        session_id=session_id,
-                        transcript_partial=conversation_pb2.TranscriptPartial(
-                            text="[LISTENING] Session started",
-                            confidence=1.0
-                        )
+                    audio_sec = len(chunk) / 32000
+
+                    # ★ RMS 침묵 필터링
+                    rms = calculate_rms(chunk)
+                    if rms < RMS_THRESHOLD:
+                        skip_count += 1
+                        print(f"[Skipped] Silence detected (RMS: {rms:.0f} < {RMS_THRESHOLD})")
+                        continue
+
+                    n += 1
+
+                    # STT
+                    arr = np.frombuffer(chunk, dtype=np.int16).astype(np.float32) / 32768.0
+
+                    segs, _ = stt_model.transcribe(
+                        arr,
+                        language="ko",
+                        beam_size=1,
+                        condition_on_previous_text=False,
+                        initial_prompt=None,
+                        vad_filter=False
                     )
 
-                # ========================================
-                # 2. AudioChunk 처리 → STT
-                # ========================================
-                elif payload_type == 'audio_chunk':
-                    audio_bytes = request.audio_chunk
-                    chunk_count += 1
-                    total_bytes += len(audio_bytes)
+                    ko = " ".join(s.text.strip() for s in segs).strip()
 
-                    # 버퍼에 오디오 누적
-                    audio_buffer.extend(audio_bytes)
+                    # ★ 빈 텍스트 또는 "..." 스킵
+                    if not ko or ko == "..." or ko == "…":
+                        print(f"[{n}] {audio_sec:.1f}s | (empty or dots)")
+                        continue
 
-                    # 오디오 길이 계산 (bytes → seconds)
-                    if audio_config:
-                        bytes_per_sample = audio_config['bits_per_sample'] // 8
-                        samples_per_second = audio_config['sample_rate'] * audio_config['channels']
-                        bytes_per_second = samples_per_second * bytes_per_sample
-                        buffer_seconds = len(audio_buffer) / bytes_per_second
-                    else:
-                        # 기본값: 16kHz, mono, 16bit
-                        bytes_per_second = 16000 * 1 * 2
-                        buffer_seconds = len(audio_buffer) / bytes_per_second
+                    print(f"[{n}] {audio_sec:.1f}s | RMS: {rms:.0f} | KO: {ko}")
 
-                    # 로그 출력 (주기적으로)
-                    if chunk_count % 20 == 1 or chunk_count <= 3:
-                        print(f"🎤 [{session_id[:8]}] Chunk #{chunk_count}: "
-                              f"{len(audio_bytes):,} bytes, "
-                              f"Buffer: {len(audio_buffer):,} bytes "
-                              f"({buffer_seconds:.2f}s)")
+                    # LLM
+                    en = translate(ko)
 
-                    # ========================================
-                    # 최소 시간 이상 누적되면 STT 수행
-                    # ========================================
-                    if buffer_seconds >= MIN_AUDIO_SECONDS:
-                        stt_count += 1
-                        start_time = time.time()
-                        print(f"🔊 [{session_id[:8]}] STT #{stt_count}: {buffer_seconds:.2f}s audio...")
+                    if not en:
+                        print(f"    EN: (skipped)")
+                        continue
 
-                        try:
-                            # PCM Int16 → Float32 [-1.0, 1.0] 변환
-                            audio_array = np.frombuffer(bytes(audio_buffer), dtype=np.int16)
-                            audio_float = audio_array.astype(np.float32) / 32768.0
+                    print(f"    EN: {en}")
 
-                            # faster-whisper 음성 인식 (Low Latency 설정)
-                            language = audio_config.get('language', 'ko') if audio_config else 'ko'
+                    # 자막
+                    yield conversation_pb2.ChatResponse(
+                        session_id=session_id,
+                        transcript_final=conversation_pb2.TranscriptFinal(text=en)
+                    )
 
-                            segments, info = model.transcribe(
-                                audio_float,
-                                language=language,
-                                beam_size=1,  # Greedy Search (속도 우선)
-                                vad_filter=True,
-                                vad_parameters={
-                                    "min_silence_duration_ms": 300,  # 짧은 침묵 허용
-                                    "speech_pad_ms": 100,
-                                }
+                    # TTS
+                    audio = tts(en)
+                    if audio:
+                        yield conversation_pb2.ChatResponse(
+                            session_id=session_id,
+                            audio_response=conversation_pb2.AudioResponse(
+                                audio_data=audio,
+                                format="mp3",
+                                sample_rate=24000
                             )
+                        )
 
-                            # 세그먼트 텍스트 결합
-                            transcription = ""
-                            for segment in segments:
-                                transcription += segment.text.strip() + " "
-                            transcription = transcription.strip()
-
-                            elapsed = time.time() - start_time
-
-                            if transcription:
-                                print(f"📝 [{session_id[:8]}] STT Result ({elapsed:.2f}s): \"{transcription}\"")
-
-                                # TranscriptFinal 전송 (text 필드만!)
+            elif pt == 'session_end':
+                # 남은 버퍼 처리 (최소 0.5초 = 16000 bytes 이상)
+                if len(buf) > 16000:
+                    rms = calculate_rms(bytes(buf))
+                    if rms >= RMS_THRESHOLD:
+                        arr = np.frombuffer(bytes(buf), dtype=np.int16).astype(np.float32) / 32768.0
+                        segs, _ = stt_model.transcribe(arr, language="ko", beam_size=1, vad_filter=False)
+                        ko = " ".join(s.text.strip() for s in segs).strip()
+                        if ko and ko != "..." and ko != "…":
+                            en = translate(ko)
+                            if en:
                                 yield conversation_pb2.ChatResponse(
                                     session_id=session_id,
-                                    transcript_final=conversation_pb2.TranscriptFinal(
-                                        text=transcription
-                                    )
+                                    transcript_final=conversation_pb2.TranscriptFinal(text=en)
                                 )
-                            else:
-                                print(f"🔇 [{session_id[:8]}] No speech detected ({elapsed:.2f}s)")
-
-                        except Exception as e:
-                            print(f"⚠️ [{session_id[:8]}] STT Error: {e}")
-                            yield conversation_pb2.ChatResponse(
-                                session_id=session_id,
-                                error=conversation_pb2.ErrorResponse(
-                                    code="STT_ERROR",
-                                    message=str(e)
-                                )
-                            )
-
-                        # 버퍼 초기화
-                        audio_buffer.clear()
-
-                    # CPU 과부하 방지 (최소 휴식)
-                    time.sleep(0.01)
-
-                # ========================================
-                # 3. SessionEnd 처리
-                # ========================================
-                elif payload_type == 'session_end':
-                    reason = request.session_end.reason
-
-                    # 남은 버퍼가 있으면 마지막 STT 수행
-                    if len(audio_buffer) > 0 and audio_config:
-                        bytes_per_sample = audio_config['bits_per_sample'] // 8
-                        samples_per_second = audio_config['sample_rate'] * audio_config['channels']
-                        bytes_per_second = samples_per_second * bytes_per_sample
-                        buffer_seconds = len(audio_buffer) / bytes_per_second
-
-                        if buffer_seconds >= 0.3:  # 0.3초 이상이면 처리
-                            print(f"🔊 [{session_id[:8]}] Final STT: {buffer_seconds:.2f}s remaining...")
-
-                            try:
-                                audio_array = np.frombuffer(bytes(audio_buffer), dtype=np.int16)
-                                audio_float = audio_array.astype(np.float32) / 32768.0
-
-                                language = audio_config.get('language', 'ko')
-                                segments, info = model.transcribe(
-                                    audio_float,
-                                    language=language,
-                                    beam_size=1,
-                                    vad_filter=True,
-                                )
-
-                                transcription = ""
-                                for segment in segments:
-                                    transcription += segment.text.strip() + " "
-                                transcription = transcription.strip()
-
-                                if transcription:
-                                    print(f"📝 [{session_id[:8]}] Final: \"{transcription}\"")
+                                audio = tts(en)
+                                if audio:
                                     yield conversation_pb2.ChatResponse(
                                         session_id=session_id,
-                                        transcript_final=conversation_pb2.TranscriptFinal(
-                                            text=transcription
+                                        audio_response=conversation_pb2.AudioResponse(
+                                            audio_data=audio, format="mp3", sample_rate=24000
                                         )
                                     )
-                            except Exception as e:
-                                print(f"⚠️ Final STT Error: {e}")
+                print(f"Session end | Processed: {n} | Skipped (silence): {skip_count}")
+                break
 
-                    print(f"\n🛑 세션 종료: [{session_id[:8]}...] - {reason}")
-                    break
+        print(f"Stream closed\n")
 
-        except grpc.RpcError as e:
-            print(f"❌ gRPC Error: {e}")
-        except Exception as e:
-            print(f"❌ Unexpected Error: {e}")
-        finally:
-            # 세션 통계 출력
-            if session_id:
-                print(f"\n{'─'*60}")
-                print(f"📊 Session [{session_id[:8]}...] Summary:")
-                print(f"   • Total Chunks: {chunk_count:,}")
-                print(f"   • Total Bytes: {total_bytes:,} ({total_bytes/1024:.1f} KB)")
-                print(f"   • STT Calls: {stt_count}")
-                print(f"{'─'*60}\n")
 
+# ============================================================================
+# 서버 시작
+# ============================================================================
 
 def serve():
-    """gRPC 서버 시작"""
-    server = grpc.server(
-        futures.ThreadPoolExecutor(max_workers=10),
-        options=[
-            ('grpc.max_send_message_length', 4 * 1024 * 1024),  # 4MB
-            ('grpc.max_receive_message_length', 4 * 1024 * 1024),  # 4MB
-        ]
-    )
-
-    conversation_pb2_grpc.add_ConversationServiceServicer_to_server(
-        ConversationServicer(), server
-    )
-
+    server = grpc.server(futures.ThreadPoolExecutor(max_workers=4))
+    conversation_pb2_grpc.add_ConversationServiceServicer_to_server(Servicer(), server)
     server.add_insecure_port('0.0.0.0:50051')
     server.start()
 
-    print("""
-╔══════════════════════════════════════════════════════════════╗
-║       🐍 Python STT gRPC Server (faster-whisper)             ║
-╠══════════════════════════════════════════════════════════════╣
-║  Address:  0.0.0.0:50051                                     ║
-║  Service:  ConversationService.StreamChat                    ║
-║  Model:    whisper-tiny (CPU, int8)                          ║
-║  Mode:     STT Low-Latency (0.5s buffer, beam=1)             ║
-╚══════════════════════════════════════════════════════════════╝
-    """)
-    print("⏳ Waiting for connections...\n")
+    print(f"""
+╔═══════════════════════════════════════════════════╗
+║  Python AI Server v5 (Stable)                     ║
+╠═══════════════════════════════════════════════════╣
+║  Buffer:  48000 bytes = 1.5s                      ║
+║  RMS:     threshold {RMS_THRESHOLD} (silence filter)            ║
+║  STT:     Whisper tiny (no VAD)                   ║
+║  LLM:     Qwen 0.5B (completion mode)             ║
+║  TTS:     edge-tts (en-US-AriaNeural)             ║
+╚═══════════════════════════════════════════════════╝
+""")
 
     try:
         server.wait_for_termination()
     except KeyboardInterrupt:
-        print("\n\n🛑 Server shutting down...")
-        server.stop(grace=5)
-        print("✅ Server stopped gracefully.")
+        server.stop(0)
 
 
 if __name__ == '__main__':

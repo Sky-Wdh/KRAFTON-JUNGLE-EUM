@@ -20,23 +20,36 @@ function getVADStatus(vad: {
   return "listening";
 }
 
-function getConnectionBadge(state: ConnectionState) {
-  const styles: Record<ConnectionState, string> = {
-    connected: "bg-green-500",
-    connecting: "bg-yellow-500 animate-pulse",
-    disconnected: "bg-gray-400",
-    error: "bg-red-500",
+function ConnectionBadge({ state }: { state: ConnectionState }) {
+  const config: Record<ConnectionState, { dot: string; text: string; label: string }> = {
+    connected: {
+      dot: "bg-black dark:bg-white",
+      text: "text-black dark:text-white",
+      label: "Connected",
+    },
+    connecting: {
+      dot: "bg-neutral-400 animate-pulse",
+      text: "text-neutral-500",
+      label: "Connecting...",
+    },
+    disconnected: {
+      dot: "bg-neutral-300 dark:bg-neutral-700",
+      text: "text-neutral-400 dark:text-neutral-500",
+      label: "Disconnected",
+    },
+    error: {
+      dot: "bg-red-500",
+      text: "text-red-500",
+      label: "Error",
+    },
   };
-  const labels: Record<ConnectionState, string> = {
-    connected: "서버 연결됨",
-    connecting: "연결 중...",
-    disconnected: "연결 안됨",
-    error: "연결 오류",
-  };
+
+  const { dot, text, label } = config[state];
+
   return (
-    <div className="flex items-center gap-2 text-sm">
-      <span className={`w-2 h-2 rounded-full ${styles[state]}`} />
-      <span className="text-zinc-600 dark:text-zinc-400">{labels[state]}</span>
+    <div className="flex items-center gap-2">
+      <div className={`w-2 h-2 rounded-full ${dot}`} />
+      <span className={`text-xs font-medium ${text}`}>{label}</span>
     </div>
   );
 }
@@ -46,52 +59,65 @@ export function VoiceMonitor() {
   const status = getVADStatus(vad);
 
   return (
-    <div className="relative flex flex-col items-center gap-6 p-8 w-full max-w-md">
-      <h2 className="text-2xl font-bold text-zinc-900 dark:text-zinc-100">
-        STT Test
-      </h2>
-
-      {getConnectionBadge(vad.connectionState)}
-
-      <StatusIndicator status={status} />
-
-      <AudioLevelBar level={vad.audioLevel} />
-
-      <div className="flex gap-4">
-        <Button
-          variant="primary"
-          onClick={() => vad.start()}
-          disabled={vad.listening || vad.loading}
-        >
-          시작
-        </Button>
-        <Button
-          variant="danger"
-          onClick={() => vad.pause()}
-          disabled={!vad.listening}
-        >
-          중지
-        </Button>
-      </div>
-
-      {vad.errored && (
-        <div className="p-4 bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 rounded-lg w-full text-sm">
-          {vad.errored.toString()}
+    <div className="w-full max-w-md mx-auto px-6 py-12">
+      {/* Main Card */}
+      <div className="bg-white dark:bg-black border border-neutral-200 dark:border-neutral-800 rounded-2xl p-8 shadow-sm">
+        {/* Connection Status */}
+        <div className="flex justify-center mb-8">
+          <ConnectionBadge state={vad.connectionState} />
         </div>
-      )}
 
-      <div className="text-sm text-zinc-500 dark:text-zinc-400 text-center space-y-1">
-        <p>음성 감지 → 서버 전송 → STT 변환</p>
-        <p>RNNoise + DSP + faster-whisper</p>
+        {/* Status Indicator */}
+        <div className="flex justify-center mb-8">
+          <StatusIndicator status={status} size="lg" />
+        </div>
+
+        {/* Audio Level */}
+        <div className="flex justify-center mb-10">
+          <AudioLevelBar level={vad.audioLevel} />
+        </div>
+
+        {/* Controls */}
+        <div className="flex justify-center gap-4 mb-8">
+          <Button
+            variant="primary"
+            size="lg"
+            onClick={() => vad.start()}
+            disabled={vad.listening || vad.loading}
+          >
+            Start
+          </Button>
+          <Button
+            variant="secondary"
+            size="lg"
+            onClick={() => vad.pause()}
+            disabled={!vad.listening}
+          >
+            Stop
+          </Button>
+        </div>
+
+        {/* Error Message */}
+        {vad.errored && (
+          <div className="mb-6 p-4 border border-red-200 dark:border-red-900 rounded-xl bg-red-50 dark:bg-red-950/20">
+            <p className="text-sm text-red-600 dark:text-red-400 text-center">
+              {vad.errored.toString()}
+            </p>
+          </div>
+        )}
+
+        {/* Divider */}
+        <div className="border-t border-neutral-200 dark:border-neutral-800 my-6" />
+
+        {/* Activity Log */}
+        <SpeechLog entries={vad.speechLog} maxHeight="180px" />
       </div>
 
-      <SpeechLog entries={vad.speechLog} />
-
-      {/* 자막 오버레이 */}
+      {/* Subtitle Overlay */}
       {vad.subtitle && (
-        <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50 max-w-2xl w-[90%]">
-          <div className="bg-black/80 backdrop-blur-sm text-white text-center px-6 py-4 rounded-lg shadow-2xl">
-            <p className="text-lg font-medium leading-relaxed">
+        <div className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 w-[90%] max-w-2xl animate-fade-in">
+          <div className="bg-black/90 dark:bg-white/90 backdrop-blur-md rounded-2xl px-8 py-5 shadow-2xl">
+            <p className="text-white dark:text-black text-center text-lg font-medium leading-relaxed">
               {vad.subtitle}
             </p>
           </div>

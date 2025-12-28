@@ -2,3 +2,7 @@ grpcio>=1.76.0
 grpcio-tools>=1.76.0
 numpy>=2.0.0
 faster-whisper>=1.2.0
+transformers>=4.40.0
+torch>=2.0.0
+accelerate>=0.25.0
+edge-tts>=6.1.0

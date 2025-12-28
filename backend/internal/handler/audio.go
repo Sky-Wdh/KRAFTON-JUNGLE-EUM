@@ -74,13 +74,13 @@ func (h *AudioHandler) HandleWebSocket(c *websocket.Conn) {
 
 	// AI 모드 또는 에코 모드 선택
 	if h.aiClient != nil {
-		// AI 모드: gRPC 스트림 연결
-		wg.Add(4)
+		// AI 모드: 단일 gRPC 스트림으로 통합
+		wg.Add(3)
 
-		// 1. AI 스트림 연결 및 오디오 전송
+		// 1. AI 통합 워커 (오디오 송신 + 응답 수신)
 		go func() {
 			defer wg.Done()
-			h.aiStreamWorker(sess)
+			h.aiUnifiedWorker(sess)
 		}()
 
 		// 2. AI 응답 → WebSocket 전송 (오디오)
@@ -89,13 +89,7 @@ func (h *AudioHandler) HandleWebSocket(c *websocket.Conn) {
 			h.aiResponseWorker(c, sess, &writeMu)
 		}()
 
-		// 3. 오디오 처리 워커 (AI 서버로 전달)
-		go func() {
-			defer wg.Done()
-			h.processingWorkerAI(sess)
-		}()
-
-		// 4. 자막(Transcript) → WebSocket 전송
+		// 3. 자막(Transcript) → WebSocket 전송
 		go func() {
 			defer wg.Done()
 			h.transcriptWorker(c, sess, &writeMu)
@@ -241,12 +235,12 @@ func (h *AudioHandler) receiveLoop(c *websocket.Conn, sess *session.Session) {
 // AI 모드 워커들
 // ============================================================================
 
-// aiStreamWorker AI 서버와의 gRPC 스트림 관리
-func (h *AudioHandler) aiStreamWorker(sess *session.Session) {
-	log.Printf("🤖 [%s] AI stream worker started", sess.ID)
-	defer log.Printf("🤖 [%s] AI stream worker stopped", sess.ID)
+// aiUnifiedWorker 단일 gRPC 스트림으로 오디오 송수신 통합 처리
+func (h *AudioHandler) aiUnifiedWorker(sess *session.Session) {
+	log.Printf("🤖 [%s] AI unified worker started", sess.ID)
+	defer log.Printf("🤖 [%s] AI unified worker stopped", sess.ID)
 
-	// gRPC 스트림 시작
+	// 단일 gRPC 스트림 시작
 	chatStream, err := h.aiClient.StartChatStream(sess.Context(), sess.ID)
 	if err != nil {
 		log.Printf("❌ [%s] Failed to start AI stream: %v", sess.ID, err)
@@ -254,7 +248,31 @@ func (h *AudioHandler) aiStreamWorker(sess *session.Session) {
 	}
 	defer chatStream.Cancel()
 
-	// AI 수신 채널 → 세션 에코 채널로 연결
+	// 송신 고루틴: AudioPackets → gRPC
+	go func() {
+		for {
+			select {
+			case <-sess.Context().Done():
+				return
+			case packet, ok := <-sess.AudioPackets:
+				if !ok {
+					return
+				}
+				metadata := sess.GetMetadata()
+				if metadata == nil {
+					continue
+				}
+				// gRPC로 전송 (Non-blocking)
+				select {
+				case chatStream.SendChan <- packet.Data:
+				default:
+					log.Printf("⚠️ [%s] gRPC send buffer full, dropping packet #%d", sess.ID, packet.SeqNum)
+				}
+			}
+		}
+	}()
+
+	// 수신 루프: gRPC → 세션 채널들
 	for {
 		select {
 		case <-sess.Context().Done():
@@ -268,11 +286,14 @@ func (h *AudioHandler) aiStreamWorker(sess *session.Session) {
 			select {
 			case sess.EchoPackets <- audioData:
 			default:
-				log.Printf("⚠️ [%s] Echo buffer full, dropping AI response", sess.ID)
+				log.Printf("⚠️ [%s] Echo buffer full, dropping AI audio response", sess.ID)
 			}
 
-		case text := <-chatStream.TextChan:
-			log.Printf("📝 [%s] AI Text: %s", sess.ID, text)
+		case text, ok := <-chatStream.TextChan:
+			if !ok {
+				return
+			}
+			log.Printf("📝 [%s] AI Text received: %s", sess.ID, text)
 
 			// Transcript 메시지를 채널로 전송
 			transcriptMsg := &session.TranscriptMessage{
@@ -282,11 +303,15 @@ func (h *AudioHandler) aiStreamWorker(sess *session.Session) {
 			}
 			select {
 			case sess.TranscriptChan <- transcriptMsg:
+				log.Printf("📝 [%s] Transcript queued for WebSocket", sess.ID)
 			default:
 				log.Printf("⚠️ [%s] Transcript buffer full, dropping message", sess.ID)
 			}
 
-		case err := <-chatStream.ErrChan:
+		case err, ok := <-chatStream.ErrChan:
+			if !ok {
+				return
+			}
 			if err != nil {
 				log.Printf("❌ [%s] AI stream error: %v", sess.ID, err)
 			}
@@ -295,50 +320,7 @@ func (h *AudioHandler) aiStreamWorker(sess *session.Session) {
 	}
 }
 
-// processingWorkerAI AI 서버로 오디오 전송
-func (h *AudioHandler) processingWorkerAI(sess *session.Session) {
-	log.Printf("🎧 [%s] AI processing worker started", sess.ID)
-	defer log.Printf("🎧 [%s] AI processing worker stopped", sess.ID)
-
-	// gRPC 스트림 시작
-	chatStream, err := h.aiClient.StartChatStream(sess.Context(), sess.ID)
-	if err != nil {
-		log.Printf("❌ [%s] Failed to start AI stream for processing: %v", sess.ID, err)
-		return
-	}
-	defer chatStream.Cancel()
-
-	for {
-		select {
-		case <-sess.Context().Done():
-			remaining := len(sess.AudioPackets)
-			if remaining > 0 {
-				log.Printf("ℹ️ [%s] Draining %d remaining packets", sess.ID, remaining)
-			}
-			return
-
-		case packet, ok := <-sess.AudioPackets:
-			if !ok {
-				return
-			}
-
-			metadata := sess.GetMetadata()
-			if metadata == nil {
-				continue
-			}
-
-			// gRPC로 전송 (Non-blocking)
-			select {
-			case chatStream.SendChan <- packet.Data:
-				// 전송 성공
-			default:
-				log.Printf("⚠️ [%s] gRPC send buffer full, dropping packet #%d", sess.ID, packet.SeqNum)
-			}
-		}
-	}
-}
-
-// aiResponseWorker AI 응답을 WebSocket으로 전송
+// aiResponseWorker AI 오디오 응답을 WebSocket으로 전송
 func (h *AudioHandler) aiResponseWorker(c *websocket.Conn, sess *session.Session, writeMu *sync.Mutex) {
 	log.Printf("📤 [%s] AI response worker started", sess.ID)
 	defer log.Printf("📤 [%s] AI response worker stopped", sess.ID)
@@ -362,7 +344,7 @@ func (h *AudioHandler) aiResponseWorker(c *websocket.Conn, sess *session.Session
 
 			if err := c.WriteMessage(websocket.BinaryMessage, data); err != nil {
 				writeMu.Unlock()
-				log.Printf("⚠️ [%s] Failed to send AI response: %v", sess.ID, err)
+				log.Printf("⚠️ [%s] Failed to send AI audio response: %v", sess.ID, err)
 				return
 			}
 			writeMu.Unlock()
@@ -407,7 +389,7 @@ func (h *AudioHandler) transcriptWorker(c *websocket.Conn, sess *session.Session
 			}
 			writeMu.Unlock()
 
-			log.Printf("📤 [%s] Transcript sent: %s", sess.ID, msg.Text)
+			log.Printf("📤 [%s] Transcript sent to WebSocket: %s", sess.ID, msg.Text)
 		}
 	}
 }
