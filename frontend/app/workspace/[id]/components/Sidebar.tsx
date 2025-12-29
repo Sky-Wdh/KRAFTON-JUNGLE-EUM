@@ -87,9 +87,8 @@ export default function Sidebar({
 
   return (
     <div
-      className={`h-screen bg-stone-50 border-r border-black/5 flex flex-col transition-all duration-300 ${
-        isCollapsed ? "w-16" : "w-64"
-      }`}
+      className={`h-screen bg-stone-50 border-r border-black/5 flex flex-col transition-all duration-300 ${isCollapsed ? "w-16" : "w-64"
+        }`}
     >
       {/* Header */}
       <div className="h-14 flex items-center justify-between px-4 border-b border-black/5">
@@ -107,9 +106,8 @@ export default function Sidebar({
         )}
         <button
           onClick={onToggleCollapse}
-          className={`p-1.5 rounded-md hover:bg-black/5 transition-colors text-black/40 hover:text-black/70 ${
-            isCollapsed ? "mx-auto" : ""
-          }`}
+          className={`p-1.5 rounded-md hover:bg-black/5 transition-colors text-black/40 hover:text-black/70 ${isCollapsed ? "mx-auto" : ""
+            }`}
         >
           <svg
             className={`w-4 h-4 transition-transform ${isCollapsed ? "rotate-180" : ""}`}
@@ -134,11 +132,10 @@ export default function Sidebar({
                   onSectionChange(item.id);
                 }
               }}
-              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all mb-0.5 ${
-                activeSection === item.id || (item.children && activeSection.startsWith("call-"))
-                  ? "bg-black/5 text-black"
-                  : "text-black/60 hover:bg-black/[0.03] hover:text-black"
-              } ${isCollapsed ? "justify-center" : ""}`}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-all mb-0.5 ${activeSection === item.id || (item.children && activeSection.startsWith("call-"))
+                ? "bg-black/5 text-black"
+                : "text-black/60 hover:bg-black/[0.03] hover:text-black"
+                } ${isCollapsed ? "justify-center" : ""}`}
               title={isCollapsed ? item.label : undefined}
             >
               <span className="flex-shrink-0">{item.icon}</span>
@@ -147,9 +144,8 @@ export default function Sidebar({
                   <span className="text-sm font-medium flex-1 text-left">{item.label}</span>
                   {item.children && (
                     <svg
-                      className={`w-4 h-4 transition-transform ${
-                        expandedItems.includes(item.id) ? "rotate-90" : ""
-                      }`}
+                      className={`w-4 h-4 transition-transform ${expandedItems.includes(item.id) ? "rotate-90" : ""
+                        }`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -161,23 +157,33 @@ export default function Sidebar({
               )}
             </button>
 
-            {/* Children */}
-            {item.children && expandedItems.includes(item.id) && !isCollapsed && (
-              <div className="ml-4 pl-4 border-l border-black/10 mt-1 mb-2">
-                {item.children.map((child) => (
-                  <button
-                    key={child.id}
-                    onClick={() => onSectionChange(child.id)}
-                    className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md transition-all text-sm ${
-                      activeSection === child.id
-                        ? "bg-black/5 text-black font-medium"
-                        : "text-black/50 hover:bg-black/[0.03] hover:text-black/70"
-                    }`}
-                  >
-                    <span className="w-1.5 h-1.5 rounded-full bg-current opacity-50" />
-                    {child.label}
-                  </button>
-                ))}
+            {/* Children with Smooth Animation */}
+            {item.children && !isCollapsed && (
+              <div
+                className={`sidebar-submenu overflow-hidden transition-all duration-300 ease-in-out ${expandedItems.includes(item.id)
+                  ? "max-h-40 opacity-100 mt-1 mb-2"
+                  : "max-h-0 opacity-0"
+                  }`}
+              >
+                <div className="ml-4 pl-4 border-l border-black/10">
+                  {item.children.map((child) => (
+                    <button
+                      key={child.id}
+                      onClick={() => {
+                        onSectionChange(child.id);
+                        setExpandedItems([]); // Close accordion on selection
+                      }}
+                      className={`w-full flex items-center gap-2 px-3 py-1.5 rounded-md transition-all text-sm ${activeSection === child.id
+                        ? "bg-black/5 text-black font-semibold"
+                        : "text-black/70 hover:bg-black/[0.03] hover:text-black font-medium"
+                        }`}
+                    >
+                      <span className={`w-1.5 h-1.5 rounded-full bg-current ${activeSection === child.id ? "opacity-100" : "opacity-30"
+                        }`} />
+                      {child.label}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
           </div>

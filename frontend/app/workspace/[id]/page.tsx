@@ -10,6 +10,7 @@ import ChatSection from "./components/ChatSection";
 import CallsSection from "./components/CallsSection";
 import CalendarSection from "./components/CalendarSection";
 import StorageSection from "./components/StorageSection";
+import VideoCallFeature from "./components/VideoCallFeature";
 
 export default function WorkspaceDetailPage() {
   const router = useRouter();
@@ -89,7 +90,7 @@ export default function WorkspaceDetailPage() {
   }
 
   const renderContent = () => {
-    // 통화방 채널 처리
+    // 통화방 채널 처리 (일반 통화 포함 모든 call- 섹션은 CallsSection으로 이동)
     if (activeSection.startsWith("call-")) {
       return <CallsSection workspaceId={workspace.id} channelId={activeSection} />;
     }

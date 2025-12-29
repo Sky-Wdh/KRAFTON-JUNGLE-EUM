@@ -452,6 +452,14 @@ class ApiClient {
     return this.request(`/api/workspaces/${workspaceId}/files/${fileId}/download`);
   }
 
+  // ========== 비디오 통화 API ==========
+  async getVideoToken(roomName: string, participantName?: string): Promise<{ token: string }> {
+    return this.request<{ token: string }>('/api/video/token', {
+      method: 'POST',
+      body: JSON.stringify({ roomName, participantName }),
+    });
+  }
+
   // 파일을 S3에 직접 업로드 (Presigned URL 사용)
   async uploadFileToS3(uploadUrl: string, file: File): Promise<void> {
     const response = await fetch(uploadUrl, {
