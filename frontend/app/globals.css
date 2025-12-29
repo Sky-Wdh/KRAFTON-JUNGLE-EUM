@@ -158,15 +158,27 @@ body {
   scrollbar-color: #000000 transparent;
 }
 
-/* Focus styles */
-*:focus-visible {
+/* Focus styles - 버튼 및 링크에만 적용 */
+button:focus-visible,
+a:focus-visible {
   outline: 2px solid var(--foreground);
   outline-offset: 2px;
 }
 
-/* Remove focus outline for inputs with no-focus-outline class */
-input.no-focus-outline:focus,
-input.no-focus-outline:focus-visible {
+/* Input 요소 기본 포커스 스타일 제거 */
+input,
+textarea,
+select {
+  outline: none !important;
+  box-shadow: none !important;
+}
+
+input:focus,
+input:focus-visible,
+textarea:focus,
+textarea:focus-visible,
+select:focus,
+select:focus-visible {
   outline: none !important;
   box-shadow: none !important;
 }
@@ -231,4 +243,20 @@ button, a, input {
 
 .animate-pulse-ring {
   animation: pulse-ring 2s ease-in-out infinite;
+}
+
+/* Context menu & Modal animations */
+@keyframes zoom-in {
+  from {
+    opacity: 0;
+    transform: scale(0.95);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+.animate-zoom-in {
+  animation: zoom-in 0.15s ease-out;
 }

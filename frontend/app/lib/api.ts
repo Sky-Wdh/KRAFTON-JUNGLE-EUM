@@ -69,6 +69,26 @@ interface ChatsResponse {
   total: number;
 }
 
+// 채팅방 관련 타입
+interface ChatRoom {
+  id: number;
+  workspace_id: number;
+  title: string;
+  created_at: string;
+  message_count: number;
+}
+
+interface ChatRoomsResponse {
+  rooms: ChatRoom[];
+  total: number;
+}
+
+interface ChatRoomMessagesResponse {
+  room_id: number;
+  messages: ChatMessage[];
+  total: number;
+}
+
 // 미팅 관련 타입
 interface Participant {
   id: number;
@@ -353,6 +373,44 @@ class ApiClient {
     });
   }
 
+  // ========== 채팅방 API (다중 채팅방) ==========
+  async getChatRooms(workspaceId: number): Promise<ChatRoomsResponse> {
+    return this.request<ChatRoomsResponse>(`/api/workspaces/${workspaceId}/chatrooms`);
+  }
+
+  async createChatRoom(workspaceId: number, title: string): Promise<ChatRoom> {
+    return this.request<ChatRoom>(`/api/workspaces/${workspaceId}/chatrooms`, {
+      method: 'POST',
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  async getChatRoomMessages(workspaceId: number, roomId: number, limit = 50, offset = 0): Promise<ChatRoomMessagesResponse> {
+    return this.request<ChatRoomMessagesResponse>(
+      `/api/workspaces/${workspaceId}/chatrooms/${roomId}/messages?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  async sendChatRoomMessage(workspaceId: number, roomId: number, message: string, type = 'TEXT'): Promise<ChatMessage> {
+    return this.request<ChatMessage>(`/api/workspaces/${workspaceId}/chatrooms/${roomId}/messages`, {
+      method: 'POST',
+      body: JSON.stringify({ message, type }),
+    });
+  }
+
+  async updateChatRoom(workspaceId: number, roomId: number, title: string): Promise<ChatRoom> {
+    return this.request<ChatRoom>(`/api/workspaces/${workspaceId}/chatrooms/${roomId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ title }),
+    });
+  }
+
+  async deleteChatRoom(workspaceId: number, roomId: number): Promise<{ message: string }> {
+    return this.request(`/api/workspaces/${workspaceId}/chatrooms/${roomId}`, {
+      method: 'DELETE',
+    });
+  }
+
   // ========== 미팅 API ==========
   async getWorkspaceMeetings(workspaceId: number): Promise<MeetingsResponse> {
     return this.request<MeetingsResponse>(`/api/workspaces/${workspaceId}/meetings`);
@@ -563,6 +621,10 @@ export type {
   // Chat
   ChatMessage,
   ChatsResponse,
+  // Chat Room
+  ChatRoom,
+  ChatRoomsResponse,
+  ChatRoomMessagesResponse,
   // Meeting
   Meeting,
   Participant,

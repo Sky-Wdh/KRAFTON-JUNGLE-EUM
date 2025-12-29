@@ -18,6 +18,7 @@ export default function WorkspaceDetailPage() {
   const { user, isAuthenticated, isLoading } = useAuth();
   const [activeSection, setActiveSection] = useState("members");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
+  const [currentChatRoomTitle, setCurrentChatRoomTitle] = useState("");
 
   // 워크스페이스 데이터
   const [workspace, setWorkspace] = useState<Workspace | null>(null);
@@ -95,11 +96,25 @@ export default function WorkspaceDetailPage() {
       return <CallsSection workspaceId={workspace.id} channelId={activeSection} />;
     }
 
+    // 채팅방 처리
+    if (activeSection.startsWith("chat-")) {
+      const roomId = parseInt(activeSection.replace("chat-", ""), 10);
+      return <ChatSection workspaceId={workspace.id} roomId={roomId} onRoomTitleChange={setCurrentChatRoomTitle} />;
+    }
+
     switch (activeSection) {
       case "members":
         return <MembersSection workspace={workspace} onMembersUpdate={fetchWorkspace} />;
       case "chat":
-        return <ChatSection workspaceId={workspace.id} />;
+        // 기본 채팅 섹션 - 채팅방을 선택하라는 메시지 표시
+        return (
+          <div className="h-full flex flex-col items-center justify-center text-black/40">
+            <svg className="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <p>사이드바에서 채팅방을 선택하세요</p>
+          </div>
+        );
       case "calls":
         return <CallsSection workspaceId={workspace.id} />;
       case "calendar":
@@ -116,6 +131,7 @@ export default function WorkspaceDetailPage() {
       {/* Sidebar */}
       <Sidebar
         workspaceName={workspace.name}
+        workspaceId={workspace.id}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
         isCollapsed={isSidebarCollapsed}
@@ -126,15 +142,23 @@ export default function WorkspaceDetailPage() {
       <div className="flex-1 flex flex-col overflow-hidden">
         {/* Top Bar */}
         <header className="h-14 border-b border-black/5 flex items-center justify-between px-6">
-          <button
-            onClick={() => router.push("/workspace")}
-            className="group flex items-center gap-2 text-black/40 hover:text-black transition-colors"
-          >
-            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
-            </svg>
-            <span className="text-sm font-medium">워크스페이스</span>
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => router.push("/workspace")}
+              className="group flex items-center gap-2 text-black/40 hover:text-black transition-colors"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 19l-7-7 7-7" />
+              </svg>
+              <span className="text-sm font-medium">워크스페이스</span>
+            </button>
+            {activeSection.startsWith("chat-") && currentChatRoomTitle && (
+              <>
+                <span className="text-black/20">/</span>
+                <span className="text-sm font-medium text-black"># {currentChatRoomTitle}</span>
+              </>
+            )}
+          </div>
 
           <div className="flex items-center gap-3">
             <NotificationDropdown onInvitationAccepted={() => router.push("/workspace")} />

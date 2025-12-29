@@ -181,9 +181,17 @@ func (s *Server) SetupRoutes() {
 	workspaceGroup.Post("/:id/members", s.workspaceHandler.AddMembers)
 	workspaceGroup.Delete("/:id/leave", s.workspaceHandler.LeaveWorkspace)
 
-	// Chat 라우트 (워크스페이스 하위)
+	// Chat 라우트 (워크스페이스 하위) - 레거시
 	workspaceGroup.Get("/:workspaceId/chats", s.chatHandler.GetWorkspaceChats)
 	workspaceGroup.Post("/:workspaceId/chats", s.chatHandler.SendMessage)
+
+	// Chat Room 라우트 (다중 채팅방)
+	workspaceGroup.Get("/:workspaceId/chatrooms", s.chatHandler.GetChatRooms)
+	workspaceGroup.Post("/:workspaceId/chatrooms", s.chatHandler.CreateChatRoom)
+	workspaceGroup.Put("/:workspaceId/chatrooms/:roomId", s.chatHandler.UpdateChatRoom)
+	workspaceGroup.Delete("/:workspaceId/chatrooms/:roomId", s.chatHandler.DeleteChatRoom)
+	workspaceGroup.Get("/:workspaceId/chatrooms/:roomId/messages", s.chatHandler.GetChatRoomMessages)
+	workspaceGroup.Post("/:workspaceId/chatrooms/:roomId/messages", s.chatHandler.SendChatRoomMessage)
 
 	// Meeting 라우트 (워크스페이스 하위)
 	workspaceGroup.Get("/:workspaceId/meetings", s.meetingHandler.GetWorkspaceMeetings)
@@ -253,8 +261,8 @@ func (s *Server) SetupRoutes() {
 		WriteBufferSize: 4096,
 	}))
 
-	// WebSocket 채팅 엔드포인트
-	s.app.Get("/ws/chat/:workspaceId", func(c *fiber.Ctx) error {
+	// WebSocket 채팅 엔드포인트 (roomId 기반)
+	s.app.Get("/ws/chat/:workspaceId/:roomId", func(c *fiber.Ctx) error {
 		if !websocket.IsWebSocketUpgrade(c) {
 			return fiber.ErrUpgradeRequired
 		}
@@ -262,24 +270,23 @@ func (s *Server) SetupRoutes() {
 		// 쿠키에서 JWT 토큰 추출
 		accessToken := c.Cookies("access_token")
 		if accessToken == "" {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "authentication required",
-			})
+			return c.SendStatus(fiber.StatusUnauthorized)
 		}
 
 		// JWT 검증
 		claims, err := s.jwtManager.ValidateAccessToken(accessToken)
 		if err != nil {
-			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
-				"error": "invalid token",
-			})
+			return c.SendStatus(fiber.StatusUnauthorized)
 		}
 
 		workspaceID, err := c.ParamsInt("workspaceId")
 		if err != nil {
-			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-				"error": "invalid workspace id",
-			})
+			return c.SendStatus(fiber.StatusBadRequest)
+		}
+
+		roomID, err := c.ParamsInt("roomId")
+		if err != nil {
+			return c.SendStatus(fiber.StatusBadRequest)
 		}
 
 		// 멤버 확인 (ACTIVE 상태만)
@@ -288,9 +295,16 @@ func (s *Server) SetupRoutes() {
 			Where("workspace_id = ? AND user_id = ? AND status = ?", workspaceID, claims.UserID, "ACTIVE").
 			Count(&count)
 		if count == 0 {
-			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
-				"error": "not a member of this workspace",
-			})
+			return c.SendStatus(fiber.StatusForbidden)
+		}
+
+		// 채팅방이 해당 워크스페이스에 속하는지 확인
+		var roomCount int64
+		s.db.Table("meetings").
+			Where("id = ? AND workspace_id = ? AND type = ?", roomID, workspaceID, "CHAT_ROOM").
+			Count(&roomCount)
+		if roomCount == 0 {
+			return c.SendStatus(fiber.StatusNotFound)
 		}
 
 		// 유저 정보 조회
@@ -299,7 +313,7 @@ func (s *Server) SetupRoutes() {
 		}
 		s.db.Table("users").Select("nickname").Where("id = ?", claims.UserID).Scan(&user)
 
-		c.Locals("workspaceId", int64(workspaceID))
+		c.Locals("roomId", int64(roomID))
 		c.Locals("userId", claims.UserID)
 		c.Locals("nickname", user.Nickname)
 

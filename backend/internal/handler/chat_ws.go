@@ -15,7 +15,7 @@ import (
 // ChatWSHandler WebSocket 채팅 핸들러
 type ChatWSHandler struct {
 	db    *gorm.DB
-	rooms map[int64]*ChatRoom // workspaceID -> ChatRoom
+	rooms map[int64]*ChatRoom // roomId -> ChatRoom
 	mu    sync.RWMutex
 }
 
@@ -62,29 +62,29 @@ func NewChatWSHandler(db *gorm.DB) *ChatWSHandler {
 }
 
 // getOrCreateRoom 채팅방 조회 또는 생성
-func (h *ChatWSHandler) getOrCreateRoom(workspaceID int64) *ChatRoom {
+func (h *ChatWSHandler) getOrCreateRoom(roomID int64) *ChatRoom {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 
-	if room, ok := h.rooms[workspaceID]; ok {
+	if room, ok := h.rooms[roomID]; ok {
 		return room
 	}
 
 	room := &ChatRoom{
 		clients: make(map[*websocket.Conn]*ChatClient),
 	}
-	h.rooms[workspaceID] = room
+	h.rooms[roomID] = room
 	return room
 }
 
 // HandleWebSocket WebSocket 연결 처리
 func (h *ChatWSHandler) HandleWebSocket(c *websocket.Conn) {
 	// 쿼리 파라미터에서 정보 추출 (안전한 타입 변환)
-	workspaceIDInterface := c.Locals("workspaceId")
+	roomIDInterface := c.Locals("roomId")
 	userIDInterface := c.Locals("userId")
 	nicknameInterface := c.Locals("nickname")
 
-	workspaceID, ok1 := workspaceIDInterface.(int64)
+	roomID, ok1 := roomIDInterface.(int64)
 	userID, ok2 := userIDInterface.(int64)
 	nickname, ok3 := nicknameInterface.(string)
 
@@ -94,7 +94,7 @@ func (h *ChatWSHandler) HandleWebSocket(c *websocket.Conn) {
 		return
 	}
 
-	room := h.getOrCreateRoom(workspaceID)
+	room := h.getOrCreateRoom(roomID)
 
 	client := &ChatClient{
 		UserID:   userID,
@@ -107,7 +107,7 @@ func (h *ChatWSHandler) HandleWebSocket(c *websocket.Conn) {
 	room.clients[c] = client
 	room.mu.Unlock()
 
-	log.Printf("채팅 클라이언트 연결: workspace=%d, user=%d", workspaceID, userID)
+	log.Printf("채팅 클라이언트 연결: room=%d, user=%d", roomID, userID)
 
 	// 연결 해제 시 정리
 	defer func() {
@@ -115,7 +115,7 @@ func (h *ChatWSHandler) HandleWebSocket(c *websocket.Conn) {
 		delete(room.clients, c)
 		room.mu.Unlock()
 		c.Close()
-		log.Printf("채팅 클라이언트 연결 해제: workspace=%d, user=%d", workspaceID, userID)
+		log.Printf("채팅 클라이언트 연결 해제: room=%d, user=%d", roomID, userID)
 	}()
 
 	// 메시지 수신 루프
@@ -132,7 +132,7 @@ func (h *ChatWSHandler) HandleWebSocket(c *websocket.Conn) {
 
 		switch msg.Type {
 		case "message":
-			h.handleMessage(room, client, workspaceID, msg.Payload)
+			h.handleMessage(room, client, roomID, msg.Payload)
 		case "typing":
 			h.broadcastTyping(room, client, true)
 		case "stop_typing":
@@ -142,7 +142,7 @@ func (h *ChatWSHandler) HandleWebSocket(c *websocket.Conn) {
 }
 
 // handleMessage 메시지 처리
-func (h *ChatWSHandler) handleMessage(room *ChatRoom, client *ChatClient, workspaceID int64, payload interface{}) {
+func (h *ChatWSHandler) handleMessage(room *ChatRoom, client *ChatClient, roomID int64, payload interface{}) {
 	payloadBytes, _ := json.Marshal(payload)
 	var chatPayload ChatPayload
 	if err := json.Unmarshal(payloadBytes, &chatPayload); err != nil {
@@ -158,17 +158,10 @@ func (h *ChatWSHandler) handleMessage(room *ChatRoom, client *ChatClient, worksp
 		chatPayload.Message = chatPayload.Message[:2000]
 	}
 
-	// 워크스페이스 채팅 미팅 조회
-	var meeting model.Meeting
-	err := h.db.Where("workspace_id = ? AND type = ?", workspaceID, "WORKSPACE_CHAT").First(&meeting).Error
-	if err != nil {
-		return
-	}
-
-	// DB에 저장
+	// DB에 저장 (roomID가 meeting.ID)
 	message := chatPayload.Message
 	chatLog := model.ChatLog{
-		MeetingID: meeting.ID,
+		MeetingID: roomID,
 		SenderID:  &client.UserID,
 		Message:   &message,
 		Type:      "TEXT",
