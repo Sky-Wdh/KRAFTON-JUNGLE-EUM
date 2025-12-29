@@ -28,7 +28,7 @@ export default function ControlBar({
                         ? 'bg-gray-700 hover:bg-gray-600 text-white'
                         : 'bg-red-500 hover:bg-red-600 text-white'
                     }`}
-                title={isMicEnabled ? '마이???�기' : '마이??켜기'}
+                title={isMicEnabled ? '마이크 끄기' : '마이크 켜기'}
             >
                 {isMicEnabled ? (
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -49,7 +49,7 @@ export default function ControlBar({
                         ? 'bg-gray-700 hover:bg-gray-600 text-white'
                         : 'bg-red-500 hover:bg-red-600 text-white'
                     }`}
-                title={isCameraEnabled ? '카메???�기' : '카메??켜기'}
+                title={isCameraEnabled ? '카메라 끄기' : '카메라 켜기'}
             >
                 {isCameraEnabled ? (
                     <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -69,7 +69,7 @@ export default function ControlBar({
                         ? 'bg-green-500 hover:bg-green-600 text-white'
                         : 'bg-gray-700 hover:bg-gray-600 text-white'
                     }`}
-                title={isScreenShareEnabled ? '?�면 공유 중�?' : '?�면 공유'}
+                title={isScreenShareEnabled ? '화면 공유 중지' : '화면 공유'}
             >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9.75 17L9 20l-1 1h8l-1-1-.75-3M3 13h18M5 17h14a2 2 0 002-2V5a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
@@ -80,7 +80,7 @@ export default function ControlBar({
             <button
                 onClick={onLeave}
                 className="p-4 bg-red-600 hover:bg-red-700 text-white rounded-full transition-all duration-200 transform hover:scale-110 active:scale-95 ml-4"
-                title="?��?�?
+                title="나가기"
             >
                 <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" />

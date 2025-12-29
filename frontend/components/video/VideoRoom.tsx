@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from 'react';
 import { Room, RoomEvent, Participant, ConnectionState, LocalParticipant, RemoteParticipant } from 'livekit-client';
-import { getToken } from '@/app/lib/api';
+import { apiClient } from '@/app/lib/api';
 import ParticipantTile from './ParticipantTile';
 import ControlBar from './ControlBar';
 
@@ -45,7 +45,7 @@ export default function VideoRoom({ roomName, participantName, onLeave }: VideoR
                 setConnectionState(ConnectionState.Connecting);
 
                 // Get token from backend
-                const token = await getToken(roomName, participantName);
+                const { token } = await apiClient.getVideoToken(roomName, participantName);
 
                 // Connect to room with custom RTC config
                 await newRoom.connect(LIVEKIT_URL, token, {
@@ -153,13 +153,13 @@ export default function VideoRoom({ roomName, participantName, onLeave }: VideoR
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" />
                         </svg>
                     </div>
-                    <h2 className="text-xl font-bold text-white mb-2">?�결 ?�패</h2>
+                    <h2 className="text-xl font-bold text-white mb-2">연결 실패</h2>
                     <p className="text-gray-400 mb-6">{error}</p>
                     <button
                         onClick={onLeave}
                         className="px-6 py-3 bg-gray-700 hover:bg-gray-600 text-white rounded-xl transition-colors"
                     >
-                        ?�아가�?
+                        돌아가기
                     </button>
                 </div>
             </div>
@@ -171,7 +171,7 @@ export default function VideoRoom({ roomName, participantName, onLeave }: VideoR
             <div className="min-h-screen bg-gray-900 flex items-center justify-center">
                 <div className="text-center">
                     <div className="w-16 h-16 border-4 border-purple-500 border-t-transparent rounded-full animate-spin mx-auto mb-4"></div>
-                    <p className="text-white text-lg">방에 ?�결 �?..</p>
+                    <p className="text-white text-lg">방에 연결 중...</p>
                     <p className="text-gray-400 mt-2">{roomName}</p>
                 </div>
             </div>
@@ -197,7 +197,7 @@ export default function VideoRoom({ roomName, participantName, onLeave }: VideoR
                     <h1 className="text-white font-semibold">{roomName}</h1>
                 </div>
                 <div className="text-gray-400 text-sm">
-                    {participants.length}�?참�? �?
+                    {participants.length}명 참가 중
                 </div>
             </header>
 

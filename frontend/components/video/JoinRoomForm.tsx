@@ -30,14 +30,14 @@ export default function JoinRoomForm() {
         <form onSubmit={handleSubmit} className="w-full max-w-md space-y-6">
             <div className="space-y-2">
                 <label htmlFor="participantName" className="block text-sm font-medium text-gray-300">
-                    ?�네??
+                    닉네임
                 </label>
                 <input
                     type="text"
                     id="participantName"
                     value={participantName}
                     onChange={(e) => setParticipantName(e.target.value)}
-                    placeholder="?�용???�네?�을 ?�력?�세??
+                    placeholder="사용자 닉네임을 입력하세요"
                     className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
                     required
                 />
@@ -45,14 +45,14 @@ export default function JoinRoomForm() {
 
             <div className="space-y-2">
                 <label htmlFor="roomName" className="block text-sm font-medium text-gray-300">
-                    �??�름
+                    방 이름
                 </label>
                 <input
                     type="text"
                     id="roomName"
                     value={roomName}
                     onChange={(e) => setRoomName(e.target.value)}
-                    placeholder="?�장??�??�름???�력?�세??
+                    placeholder="입장할 방 이름을 입력하세요"
                     className="w-full px-4 py-3 bg-gray-800/50 border border-gray-700 rounded-xl text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
                     required
                 />
@@ -69,10 +69,10 @@ export default function JoinRoomForm() {
                             <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" />
                             <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z" />
                         </svg>
-                        ?�장 �?..
+                        입장 중...
                     </span>
                 ) : (
-                    '방에 ?�장?�기'
+                    '방에 입장하기'
                 )}
             </button>
         </form>

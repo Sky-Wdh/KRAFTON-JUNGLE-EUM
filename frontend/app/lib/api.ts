@@ -185,6 +185,24 @@ interface FilesResponse {
   breadcrumbs?: WorkspaceFile[];
 }
 
+// 알림 관련 타입
+interface Notification {
+  id: number;
+  user_id: number;
+  type: string;
+  content: string;
+  workspace_id?: number;
+  sender_id?: number;
+  is_read: boolean;
+  created_at: string;
+  sender?: UserSearchResult;
+}
+
+interface NotificationsResponse {
+  notifications: Notification[];
+  total: number;
+}
+
 // 화이트보드 관련 타입
 interface WhiteboardResponse {
   success: boolean;
@@ -546,6 +564,23 @@ class ApiClient {
       throw new Error('Failed to upload file to S3');
     }
   }
+
+  // ========== 알림 API ==========
+  async getMyNotifications(): Promise<NotificationsResponse> {
+    return this.request<NotificationsResponse>('/api/notifications');
+  }
+
+  async acceptInvitation(notificationId: number): Promise<{ message: string; workspace_id: number }> {
+    return this.request(`/api/notifications/${notificationId}/accept`, {
+      method: 'POST',
+    });
+  }
+
+  async declineInvitation(notificationId: number): Promise<{ message: string }> {
+    return this.request(`/api/notifications/${notificationId}/decline`, {
+      method: 'POST',
+    });
+  }
 }
 
 export const apiClient = new ApiClient();
@@ -577,4 +612,7 @@ export type {
   // Storage
   WorkspaceFile,
   FilesResponse,
+  // Notification
+  Notification,
+  NotificationsResponse,
 };
