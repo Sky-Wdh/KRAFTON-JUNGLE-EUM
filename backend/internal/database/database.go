@@ -9,6 +9,8 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+
+	"realtime-backend/internal/model"
 )
 
 // DB 전역 데이터베이스 인스턴스
@@ -81,6 +83,24 @@ func ConnectDB() (*gorm.DB, error) {
 
 	// 전역 변수에 저장
 	DB = db
+
+	// AutoMigrate - 테이블 스키마 자동 업데이트
+	if err := db.AutoMigrate(
+		&model.User{},
+		&model.Workspace{},
+		&model.Role{},
+		&model.RolePermission{},
+		&model.WorkspaceMember{},
+		&model.Meeting{},
+		&model.Participant{},
+		&model.Whiteboard{},
+		&model.ChatLog{},
+		&model.CalendarEvent{},
+		&model.EventAttendee{},
+		&model.WorkspaceFile{},
+	); err != nil {
+		log.Printf("⚠️ AutoMigrate warning: %v", err)
+	}
 
 	return db, nil
 }

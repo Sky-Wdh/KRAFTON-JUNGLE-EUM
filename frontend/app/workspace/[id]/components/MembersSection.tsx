@@ -1,50 +1,45 @@
 "use client";
 
 import { useState } from "react";
+import { Workspace } from "../../../lib/api";
 
-interface Member {
-  id: number;
-  name: string;
-  email: string;
-  role: "owner" | "admin" | "member";
-  status: "online" | "away" | "offline";
-  profileImg?: string;
+interface MembersSectionProps {
+  workspace: Workspace;
 }
 
-const mockMembers: Member[] = [
-  { id: 1, name: "김철수", email: "chulsoo@example.com", role: "owner", status: "online", profileImg: undefined },
-  { id: 2, name: "이영희", email: "younghee@example.com", role: "admin", status: "online", profileImg: undefined },
-  { id: 3, name: "박민수", email: "minsoo@example.com", role: "member", status: "away", profileImg: undefined },
-  { id: 4, name: "정수진", email: "soojin@example.com", role: "member", status: "online", profileImg: undefined },
-  { id: 5, name: "최동훈", email: "donghun@example.com", role: "member", status: "offline", profileImg: undefined },
-  { id: 6, name: "강민지", email: "minji@example.com", role: "member", status: "offline", profileImg: undefined },
-];
-
-const roleLabels = {
+const roleLabels: Record<string, string> = {
   owner: "소유자",
   admin: "관리자",
   member: "멤버",
 };
 
-const statusColors = {
-  online: "bg-green-500",
-  away: "bg-yellow-500",
-  offline: "bg-gray-300",
-};
-
-export default function MembersSection() {
+export default function MembersSection({ workspace }: MembersSectionProps) {
   const [searchQuery, setSearchQuery] = useState("");
-  const [filter, setFilter] = useState<"all" | "online">("all");
 
-  const filteredMembers = mockMembers.filter((member) => {
+  // 워크스페이스 멤버 목록 변환
+  const members = (workspace.members || []).map((m) => ({
+    id: m.id,
+    userId: m.user_id,
+    name: m.user?.nickname || "알 수 없음",
+    email: m.user?.email || "",
+    profileImg: m.user?.profile_img,
+    isOwner: m.user_id === workspace.owner_id,
+    joinedAt: m.joined_at,
+  }));
+
+  const filteredMembers = members.filter((member) => {
     const matchesSearch =
       member.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
       member.email.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesFilter = filter === "all" || member.status === "online";
-    return matchesSearch && matchesFilter;
+    return matchesSearch;
   });
 
-  const onlineCount = mockMembers.filter((m) => m.status === "online").length;
+  // 소유자를 먼저 표시
+  const sortedMembers = [...filteredMembers].sort((a, b) => {
+    if (a.isOwner && !b.isOwner) return -1;
+    if (!a.isOwner && b.isOwner) return 1;
+    return 0;
+  });
 
   return (
     <div className="h-full flex flex-col">
@@ -54,7 +49,7 @@ export default function MembersSection() {
           <div>
             <h1 className="text-2xl font-semibold text-black">멤버</h1>
             <p className="text-sm text-black/40 mt-1">
-              {mockMembers.length}명의 멤버 · {onlineCount}명 온라인
+              {members.length}명의 멤버
             </p>
           </div>
           <button className="flex items-center gap-2 px-4 py-2 bg-black text-white text-sm font-medium rounded-lg hover:bg-black/80 transition-colors">
@@ -65,7 +60,7 @@ export default function MembersSection() {
           </button>
         </div>
 
-        {/* Search & Filter */}
+        {/* Search */}
         <div className="flex items-center gap-3">
           <div className="relative flex-1 max-w-md">
             <input
@@ -84,35 +79,13 @@ export default function MembersSection() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
             </svg>
           </div>
-          <div className="flex items-center bg-black/[0.03] rounded-lg p-1">
-            <button
-              onClick={() => setFilter("all")}
-              className={`px-3 py-1.5 text-sm rounded-md transition-all ${
-                filter === "all"
-                  ? "bg-white text-black shadow-sm"
-                  : "text-black/50 hover:text-black/70"
-              }`}
-            >
-              전체
-            </button>
-            <button
-              onClick={() => setFilter("online")}
-              className={`px-3 py-1.5 text-sm rounded-md transition-all ${
-                filter === "online"
-                  ? "bg-white text-black shadow-sm"
-                  : "text-black/50 hover:text-black/70"
-              }`}
-            >
-              온라인
-            </button>
-          </div>
         </div>
       </div>
 
       {/* Member List */}
       <div className="flex-1 overflow-y-auto px-8 py-4">
         <div className="space-y-1">
-          {filteredMembers.map((member) => (
+          {sortedMembers.map((member) => (
             <div
               key={member.id}
               className="flex items-center gap-4 p-3 rounded-xl hover:bg-black/[0.02] transition-colors group"
@@ -132,24 +105,15 @@ export default function MembersSection() {
                     </span>
                   </div>
                 )}
-                <div
-                  className={`absolute bottom-0 right-0 w-3 h-3 rounded-full border-2 border-white ${statusColors[member.status]}`}
-                />
               </div>
 
               {/* Info */}
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-black">{member.name}</span>
-                  {member.role !== "member" && (
-                    <span
-                      className={`text-[10px] font-medium px-1.5 py-0.5 rounded ${
-                        member.role === "owner"
-                          ? "bg-amber-100 text-amber-700"
-                          : "bg-blue-100 text-blue-700"
-                      }`}
-                    >
-                      {roleLabels[member.role]}
+                  {member.isOwner && (
+                    <span className="text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">
+                      {roleLabels.owner}
                     </span>
                   )}
                 </div>
@@ -171,6 +135,15 @@ export default function MembersSection() {
               </div>
             </div>
           ))}
+
+          {/* Empty State */}
+          {sortedMembers.length === 0 && (
+            <div className="text-center py-12">
+              <p className="text-black/40">
+                {searchQuery ? "검색 결과가 없습니다" : "멤버가 없습니다"}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>

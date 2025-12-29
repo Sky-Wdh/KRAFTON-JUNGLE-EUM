@@ -18,6 +18,16 @@ type Config struct {
 	CORS      CORSConfig
 	AI        AIConfig
 	Auth      AuthConfig
+	S3        S3Config
+}
+
+// S3Config AWS S3 설정
+type S3Config struct {
+	Region          string
+	BucketName      string
+	AccessKeyID     string
+	SecretAccessKey string
+	PresignExpiry   time.Duration
 }
 
 // AuthConfig 인증 설정
@@ -105,6 +115,13 @@ func Load() *Config {
 			RefreshTokenExpiry: getDuration("REFRESH_TOKEN_EXPIRY", 7*24*time.Hour),
 			GoogleClientID:     getEnv("GOOGLE_CLIENT_ID", ""),
 			SecureCookie:       getBool("SECURE_COOKIE", false),
+		},
+		S3: S3Config{
+			Region:          getEnv("AWS_REGION", "ap-northeast-2"),
+			BucketName:      getEnv("AWS_S3_BUCKET", ""),
+			AccessKeyID:     getEnv("AWS_ACCESS_KEY_ID", ""),
+			SecretAccessKey: getEnv("AWS_SECRET_ACCESS_KEY", ""),
+			PresignExpiry:   getDuration("S3_PRESIGN_EXPIRY", 15*time.Minute),
 		},
 	}
 }

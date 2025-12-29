@@ -3,33 +3,7 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import { useAuth } from "../lib/auth-context";
-import { apiClient, UserSearchResult } from "../lib/api";
-
-// 임시 워크스페이스 데이터 (나중에 API로 대체)
-const mockWorkspaces = [
-  {
-    id: 1,
-    name: "프로젝트 A",
-    members: [
-      { id: 1, name: "김철수", profileImg: null },
-      { id: 2, name: "이영희", profileImg: null },
-      { id: 3, name: "박민수", profileImg: null },
-      { id: 4, name: "정수진", profileImg: null },
-      { id: 5, name: "최동훈", profileImg: null },
-    ],
-    lastActive: "방금 전",
-  },
-  {
-    id: 2,
-    name: "디자인 팀",
-    members: [
-      { id: 6, name: "홍길동", profileImg: null },
-      { id: 7, name: "김미래", profileImg: null },
-      { id: 8, name: "이현우", profileImg: null },
-    ],
-    lastActive: "2시간 전",
-  },
-];
+import { apiClient, UserSearchResult, Workspace } from "../lib/api";
 
 export default function WorkspacePage() {
   const router = useRouter();
@@ -39,6 +13,11 @@ export default function WorkspacePage() {
   const [isClosingModal, setIsClosingModal] = useState(false);
   const [newWorkspaceName, setNewWorkspaceName] = useState("");
   const [createStep, setCreateStep] = useState<1 | 2>(1);
+
+  // 워크스페이스 관련 state
+  const [workspaces, setWorkspaces] = useState<Workspace[]>([]);
+  const [isLoadingWorkspaces, setIsLoadingWorkspaces] = useState(true);
+  const [isCreating, setIsCreating] = useState(false);
 
   // 멤버 초대 관련 state
   const [searchQuery, setSearchQuery] = useState("");
@@ -141,21 +120,57 @@ export default function WorkspacePage() {
     setSearchResults([]);
   };
 
+  // 워크스페이스 목록 조회
+  const fetchWorkspaces = useCallback(async () => {
+    try {
+      setIsLoadingWorkspaces(true);
+      const response = await apiClient.getMyWorkspaces();
+      setWorkspaces(response.workspaces);
+    } catch (error) {
+      console.error("Failed to fetch workspaces:", error);
+    } finally {
+      setIsLoadingWorkspaces(false);
+    }
+  }, []);
+
   // 워크스페이스 생성 완료
-  const handleCreateWorkspace = () => {
-    console.log("Creating workspace:", {
-      name: newWorkspaceName,
-      members: selectedMembers.map((m) => m.id),
-    });
-    // TODO: API 호출하여 워크스페이스 생성
-    handleCloseModal();
+  const handleCreateWorkspace = async () => {
+    if (isCreating) return;
+
+    try {
+      setIsCreating(true);
+      const newWorkspace = await apiClient.createWorkspace({
+        name: newWorkspaceName,
+        member_ids: selectedMembers.map((m) => m.id),
+      });
+
+      // 워크스페이스 목록 새로고침
+      await fetchWorkspaces();
+      handleCloseModal();
+
+      // 새로 생성된 워크스페이스로 이동
+      router.push(`/workspace/${newWorkspace.id}`);
+    } catch (error) {
+      console.error("Failed to create workspace:", error);
+      alert("워크스페이스 생성에 실패했습니다.");
+    } finally {
+      setIsCreating(false);
+    }
   };
 
+  // 인증 상태 체크 및 워크스페이스 로드
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push("/");
     }
   }, [isLoading, isAuthenticated, router]);
+
+  // 워크스페이스 목록 로드
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchWorkspaces();
+    }
+  }, [isAuthenticated, fetchWorkspaces]);
 
   const handleLogout = async () => {
     await logout();
@@ -264,33 +279,89 @@ export default function WorkspacePage() {
               </h2>
             </div>
 
-            {/* Workspace Grid */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {/* New Workspace Card */}
-              <button
-                className="group h-56 border-2 border-dashed border-black/10 hover:border-black/30 transition-all duration-300 flex flex-col items-center justify-center gap-4 hover:bg-black/[0.01]"
-                onClick={handleOpenModal}
-              >
+            {/* Loading State */}
+            {isLoadingWorkspaces && (
+              <div className="flex items-center justify-center py-20">
+                <div className="w-8 h-8 border-2 border-black/20 border-t-black/60 rounded-full animate-spin" />
+              </div>
+            )}
+
+            {/* Empty State - 워크스페이스가 없을 때 */}
+            {!isLoadingWorkspaces && workspaces.length === 0 && (
+              <div className="flex flex-col items-center justify-center py-20">
                 <img
                   src="/logo_black.png"
                   alt=""
-                  className="w-12 h-12 object-contain opacity-20 group-hover:opacity-40 group-hover:scale-110 transition-all duration-300"
+                  className="w-20 h-20 object-contain opacity-10 mb-6"
                 />
-                <span className="text-sm text-black/35 group-hover:text-black/60 transition-colors duration-300">
-                  새 워크스페이스
-                </span>
-              </button>
+                <p className="text-black/40 mb-8">아직 워크스페이스가 없습니다</p>
+                <button
+                  onClick={handleOpenModal}
+                  className="group flex items-center gap-3 px-8 py-3 bg-black text-white rounded-full hover:bg-black/80 transition-all duration-300"
+                >
+                  <svg
+                    className="w-5 h-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 4v16m8-8H4"
+                    />
+                  </svg>
+                  <span className="font-medium">새 워크스페이스 만들기</span>
+                </button>
+              </div>
+            )}
+
+            {/* Workspace Grid - 워크스페이스가 있을 때만 표시 */}
+            {!isLoadingWorkspaces && workspaces.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {/* New Workspace Card */}
+                <button
+                  className="group h-56 border-2 border-dashed border-black/10 hover:border-black/30 transition-all duration-300 flex flex-col items-center justify-center gap-4 hover:bg-black/[0.01]"
+                  onClick={handleOpenModal}
+                >
+                  <img
+                    src="/logo_black.png"
+                    alt=""
+                    className="w-12 h-12 object-contain opacity-20 group-hover:opacity-40 group-hover:scale-110 transition-all duration-300"
+                  />
+                  <span className="text-sm text-black/35 group-hover:text-black/60 transition-colors duration-300">
+                    새 워크스페이스
+                  </span>
+                </button>
 
               {/* Workspace Cards */}
-              {mockWorkspaces.map((workspace) => {
-                const displayMembers = workspace.members.slice(0, 4);
-                const remainingCount = workspace.members.length - 4;
+              {workspaces.map((workspace) => {
+                const members = workspace.members || [];
+                const displayMembers = members.slice(0, 4);
+                const remainingCount = members.length - 4;
+
+                // 상대적 시간 계산
+                const getRelativeTime = (dateString: string) => {
+                  const date = new Date(dateString);
+                  const now = new Date();
+                  const diffMs = now.getTime() - date.getTime();
+                  const diffMins = Math.floor(diffMs / 60000);
+                  const diffHours = Math.floor(diffMins / 60);
+                  const diffDays = Math.floor(diffHours / 24);
+
+                  if (diffMins < 1) return "방금 전";
+                  if (diffMins < 60) return `${diffMins}분 전`;
+                  if (diffHours < 24) return `${diffHours}시간 전`;
+                  if (diffDays < 7) return `${diffDays}일 전`;
+                  return date.toLocaleDateString("ko-KR");
+                };
 
                 return (
                   <button
                     key={workspace.id}
                     className="group h-56 border border-black/10 hover:border-black/25 bg-white hover:shadow-lg transition-all duration-300 text-left p-7 flex flex-col justify-between"
-                    onClick={() => {/* TODO: 워크스페이스 입장 */}}
+                    onClick={() => router.push(`/workspace/${workspace.id}`)}
                   >
                     <div>
                       <h3 className="text-xl font-medium text-black mb-6">
@@ -306,15 +377,15 @@ export default function WorkspacePage() {
                               className="w-8 h-8 rounded-full border-2 border-white bg-black/10 flex items-center justify-center"
                               style={{ zIndex: displayMembers.length - index }}
                             >
-                              {member.profileImg ? (
+                              {member.user?.profile_img ? (
                                 <img
-                                  src={member.profileImg}
-                                  alt={member.name}
+                                  src={member.user.profile_img}
+                                  alt={member.user.nickname}
                                   className="w-full h-full rounded-full object-cover"
                                 />
                               ) : (
                                 <span className="text-xs font-medium text-black/50">
-                                  {member.name.charAt(0)}
+                                  {member.user?.nickname?.charAt(0) || "?"}
                                 </span>
                               )}
                             </div>
@@ -335,7 +406,7 @@ export default function WorkspacePage() {
 
                     <div className="flex items-center justify-between">
                       <span className="text-xs text-black/30">
-                        {workspace.lastActive}
+                        {getRelativeTime(workspace.created_at)}
                       </span>
                       <div className="w-8 h-8 rounded-full flex items-center justify-center group-hover:bg-black/5 transition-colors duration-300">
                         <svg
@@ -356,12 +427,6 @@ export default function WorkspacePage() {
                   </button>
                 );
               })}
-            </div>
-
-            {/* Empty State (워크스페이스가 없을 때) */}
-            {mockWorkspaces.length === 0 && (
-              <div className="text-center py-16">
-                <p className="text-black/30">아직 워크스페이스가 없습니다</p>
               </div>
             )}
           </section>
@@ -383,7 +448,7 @@ export default function WorkspacePage() {
         <div className="w-[70%] h-full relative overflow-hidden">
           <video
             ref={videoRef}
-            src="/new-workspace-page-background-video.mp4"
+            src="/new-workspace-page-background-video.mov"
             className="w-full h-full object-cover"
             muted
             loop
@@ -491,92 +556,7 @@ export default function WorkspacePage() {
                 </p>
 
                 <div className="space-y-6">
-                  {/* Search Input */}
-                  <div className="relative">
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="검색..."
-                      className="no-focus-outline w-full py-3 pl-10 text-base text-black border border-black/10 bg-transparent placeholder:text-black/20 rounded-lg"
-                      autoFocus
-                    />
-                    <svg
-                      className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-black/30"
-                      fill="none"
-                      stroke="currentColor"
-                      viewBox="0 0 24 24"
-                    >
-                      <path
-                        strokeLinecap="round"
-                        strokeLinejoin="round"
-                        strokeWidth={1.5}
-                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
-                      />
-                    </svg>
-                    {isSearching && (
-                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                        <div className="w-4 h-4 border-2 border-black/20 border-t-black/60 rounded-full animate-spin" />
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Search Results */}
-                  {searchResults.length > 0 && (
-                    <div className="border border-black/10 rounded-lg overflow-hidden max-h-40 overflow-y-auto">
-                      {searchResults.map((result) => (
-                        <button
-                          key={result.id}
-                          onClick={() => handleAddMember(result)}
-                          className="w-full flex items-center gap-3 p-3 hover:bg-black/5 transition-colors text-left"
-                        >
-                          {result.profile_img ? (
-                            <img
-                              src={result.profile_img}
-                              alt={result.nickname}
-                              className="w-8 h-8 rounded-full object-cover"
-                            />
-                          ) : (
-                            <div className="w-8 h-8 rounded-full bg-black/10 flex items-center justify-center">
-                              <span className="text-xs font-medium text-black/50">
-                                {result.nickname.charAt(0).toUpperCase()}
-                              </span>
-                            </div>
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <p className="text-sm font-medium text-black truncate">
-                              {result.nickname}
-                            </p>
-                            <p className="text-xs text-black/40 truncate">
-                              {result.email}
-                            </p>
-                          </div>
-                          <svg
-                            className="w-5 h-5 text-black/30"
-                            fill="none"
-                            stroke="currentColor"
-                            viewBox="0 0 24 24"
-                          >
-                            <path
-                              strokeLinecap="round"
-                              strokeLinejoin="round"
-                              strokeWidth={1.5}
-                              d="M12 4v16m8-8H4"
-                            />
-                          </svg>
-                        </button>
-                      ))}
-                    </div>
-                  )}
-
-                  {/* No Results */}
-                  {searchQuery.length >= 2 && !isSearching && searchResults.length === 0 && (
-                    <p className="text-sm text-black/40 text-center py-4">
-                      검색 결과가 없습니다
-                    </p>
-                  )}
-
-                  {/* Selected Members */}
+                  {/* Selected Members - 상단에 표시 */}
                   {selectedMembers.length > 0 && (
                     <div className="space-y-2">
                       <p className="text-xs text-black/40 uppercase tracking-wider">
@@ -595,8 +575,8 @@ export default function WorkspacePage() {
                                 className="w-6 h-6 rounded-full object-cover"
                               />
                             ) : (
-                              <div className="w-6 h-6 rounded-full bg-black/10 flex items-center justify-center">
-                                <span className="text-[10px] font-medium text-black/50">
+                              <div className="w-6 h-6 rounded-full bg-gradient-to-br from-black/20 to-black/10 flex items-center justify-center">
+                                <span className="text-[10px] font-medium text-black/60">
                                   {member.nickname.charAt(0).toUpperCase()}
                                 </span>
                               </div>
@@ -628,6 +608,94 @@ export default function WorkspacePage() {
                     </div>
                   )}
 
+                  {/* Search Input with Dropdown */}
+                  <div className="relative">
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="이름 또는 이메일로 검색..."
+                      className="no-focus-outline w-full py-3 pl-10 pr-10 text-base text-black border border-black/10 bg-white placeholder:text-black/30 rounded-lg"
+                      autoFocus
+                    />
+                    <svg
+                      className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-black/30"
+                      fill="none"
+                      stroke="currentColor"
+                      viewBox="0 0 24 24"
+                    >
+                      <path
+                        strokeLinecap="round"
+                        strokeLinejoin="round"
+                        strokeWidth={1.5}
+                        d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"
+                      />
+                    </svg>
+                    {isSearching && (
+                      <div className="absolute right-3 top-1/2 -translate-y-1/2">
+                        <div className="w-4 h-4 border-2 border-black/20 border-t-black/60 rounded-full animate-spin" />
+                      </div>
+                    )}
+
+                    {/* Dropdown Results */}
+                    {(searchResults.length > 0 || (searchQuery.length >= 2 && !isSearching)) && (
+                      <div className="absolute top-full left-0 right-0 mt-1 bg-white border border-black/10 rounded-lg shadow-lg overflow-hidden z-10">
+                        {searchResults.length > 0 ? (
+                          <div className="max-h-48 overflow-y-auto">
+                            {searchResults.map((result) => (
+                              <button
+                                key={result.id}
+                                onClick={() => handleAddMember(result)}
+                                className="w-full flex items-center gap-3 p-3 hover:bg-black/5 transition-colors text-left border-b border-black/5 last:border-b-0"
+                              >
+                                {result.profile_img ? (
+                                  <img
+                                    src={result.profile_img}
+                                    alt={result.nickname}
+                                    className="w-9 h-9 rounded-full object-cover"
+                                  />
+                                ) : (
+                                  <div className="w-9 h-9 rounded-full bg-gradient-to-br from-black/20 to-black/10 flex items-center justify-center">
+                                    <span className="text-sm font-medium text-black/60">
+                                      {result.nickname.charAt(0).toUpperCase()}
+                                    </span>
+                                  </div>
+                                )}
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-sm font-medium text-black truncate">
+                                    {result.nickname}
+                                  </p>
+                                  <p className="text-xs text-black/40 truncate">
+                                    {result.email}
+                                  </p>
+                                </div>
+                                <div className="w-6 h-6 rounded-full bg-black/5 flex items-center justify-center">
+                                  <svg
+                                    className="w-4 h-4 text-black/40"
+                                    fill="none"
+                                    stroke="currentColor"
+                                    viewBox="0 0 24 24"
+                                  >
+                                    <path
+                                      strokeLinecap="round"
+                                      strokeLinejoin="round"
+                                      strokeWidth={2}
+                                      d="M12 4v16m8-8H4"
+                                    />
+                                  </svg>
+                                </div>
+                              </button>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-4 text-center">
+                            <p className="text-sm text-black/40">검색 결과가 없습니다</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+
                   {/* Action Buttons */}
                   <div className="flex items-center justify-between pt-4">
                     {/* Back Button */}
@@ -654,25 +722,30 @@ export default function WorkspacePage() {
                     {/* Create / Skip Button */}
                     <button
                       onClick={handleCreateWorkspace}
-                      className="group flex items-center gap-3 text-black"
+                      disabled={isCreating}
+                      className={`group flex items-center gap-3 ${isCreating ? 'text-black/40 cursor-not-allowed' : 'text-black'}`}
                     >
                       <span className="text-sm font-medium tracking-wide">
-                        {selectedMembers.length > 0 ? '완료' : '건너뛰기'}
+                        {isCreating ? '생성 중...' : selectedMembers.length > 0 ? '완료' : '건너뛰기'}
                       </span>
-                      <div className="w-8 h-8 rounded-full border border-black flex items-center justify-center group-hover:bg-black group-hover:text-white transition-all duration-300">
-                        <svg
-                          className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-300"
-                          fill="none"
-                          stroke="currentColor"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            strokeLinecap="round"
-                            strokeLinejoin="round"
-                            strokeWidth={1.5}
-                            d="M9 5l7 7-7 7"
-                          />
-                        </svg>
+                      <div className={`w-8 h-8 rounded-full border flex items-center justify-center transition-all duration-300 ${isCreating ? 'border-black/20' : 'border-black group-hover:bg-black group-hover:text-white'}`}>
+                        {isCreating ? (
+                          <div className="w-4 h-4 border-2 border-black/20 border-t-black/60 rounded-full animate-spin" />
+                        ) : (
+                          <svg
+                            className="w-4 h-4 group-hover:translate-x-0.5 transition-transform duration-300"
+                            fill="none"
+                            stroke="currentColor"
+                            viewBox="0 0 24 24"
+                          >
+                            <path
+                              strokeLinecap="round"
+                              strokeLinejoin="round"
+                              strokeWidth={1.5}
+                              d="M9 5l7 7-7 7"
+                            />
+                          </svg>
+                        )}
                       </div>
                     </button>
                   </div>

@@ -31,10 +31,12 @@ type Workspace struct {
 	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
 
 	// Relations
-	Owner    User              `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
-	Members  []WorkspaceMember `gorm:"foreignKey:WorkspaceID" json:"members,omitempty"`
-	Roles    []Role            `gorm:"foreignKey:WorkspaceID" json:"roles,omitempty"`
-	Meetings []Meeting         `gorm:"foreignKey:WorkspaceID" json:"meetings,omitempty"`
+	Owner          User              `gorm:"foreignKey:OwnerID" json:"owner,omitempty"`
+	Members        []WorkspaceMember `gorm:"foreignKey:WorkspaceID" json:"members,omitempty"`
+	Roles          []Role            `gorm:"foreignKey:WorkspaceID" json:"roles,omitempty"`
+	Meetings       []Meeting         `gorm:"foreignKey:WorkspaceID" json:"meetings,omitempty"`
+	CalendarEvents []CalendarEvent   `gorm:"foreignKey:WorkspaceID" json:"calendar_events,omitempty"`
+	Files          []WorkspaceFile   `gorm:"foreignKey:WorkspaceID" json:"files,omitempty"`
 }
 
 func (Workspace) TableName() string {
@@ -100,6 +102,7 @@ type Meeting struct {
 	Status      string     `gorm:"type:varchar(20);default:'SCHEDULED'" json:"status"`
 	StartedAt   *time.Time `json:"started_at,omitempty"`
 	EndedAt     *time.Time `json:"ended_at,omitempty"`
+	CreatedAt   time.Time  `gorm:"autoCreateTime" json:"created_at"`
 
 	// Relations
 	Workspace    *Workspace    `gorm:"foreignKey:WorkspaceID" json:"workspace,omitempty"`
@@ -164,4 +167,72 @@ type ChatLog struct {
 
 func (ChatLog) TableName() string {
 	return "chat_logs"
+}
+
+// CalendarEvent 캘린더 이벤트
+type CalendarEvent struct {
+	ID              int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	WorkspaceID     int64     `gorm:"not null" json:"workspace_id"`
+	CreatorID       *int64    `json:"creator_id,omitempty"`
+	Title           string    `gorm:"type:varchar(255);not null" json:"title"`
+	Description     *string   `gorm:"type:text" json:"description,omitempty"`
+	StartAt         time.Time `gorm:"not null" json:"start_at"`
+	EndAt           time.Time `gorm:"not null" json:"end_at"`
+	IsAllDay        bool      `gorm:"default:false" json:"is_all_day"`
+	LinkedMeetingID *int64    `json:"linked_meeting_id,omitempty"`
+	Color           *string   `gorm:"type:varchar(20)" json:"color,omitempty"`
+	CreatedAt       time.Time `gorm:"autoCreateTime" json:"created_at"`
+
+	// Relations
+	Workspace     Workspace       `gorm:"foreignKey:WorkspaceID" json:"workspace,omitempty"`
+	Creator       *User           `gorm:"foreignKey:CreatorID" json:"creator,omitempty"`
+	LinkedMeeting *Meeting        `gorm:"foreignKey:LinkedMeetingID" json:"linked_meeting,omitempty"`
+	Attendees     []EventAttendee `gorm:"foreignKey:EventID" json:"attendees,omitempty"`
+}
+
+func (CalendarEvent) TableName() string {
+	return "calendar_events"
+}
+
+// EventAttendee 일정 참여자
+type EventAttendee struct {
+	EventID   int64     `gorm:"primaryKey" json:"event_id"`
+	UserID    int64     `gorm:"primaryKey" json:"user_id"`
+	Status    string    `gorm:"type:varchar(20);default:'PENDING'" json:"status"` // PENDING, ACCEPTED, DECLINED
+	CreatedAt time.Time `gorm:"autoCreateTime" json:"created_at"`
+
+	// Relations
+	Event CalendarEvent `gorm:"foreignKey:EventID" json:"event,omitempty"`
+	User  User          `gorm:"foreignKey:UserID" json:"user,omitempty"`
+}
+
+func (EventAttendee) TableName() string {
+	return "event_attendees"
+}
+
+// WorkspaceFile 워크스페이스 파일/폴더
+type WorkspaceFile struct {
+	ID               int64     `gorm:"primaryKey;autoIncrement" json:"id"`
+	WorkspaceID      int64     `gorm:"not null" json:"workspace_id"`
+	UploaderID       *int64    `json:"uploader_id,omitempty"`
+	ParentFolderID   *int64    `json:"parent_folder_id,omitempty"`
+	Name             string    `gorm:"type:varchar(255);not null" json:"name"`
+	Type             string    `gorm:"type:varchar(20);not null" json:"type"` // FILE, FOLDER
+	FileURL          *string   `gorm:"type:text" json:"file_url,omitempty"`
+	FileSize         *int64    `json:"file_size,omitempty"`
+	MimeType         *string   `gorm:"type:varchar(100)" json:"mime_type,omitempty"`
+	S3Key            *string   `gorm:"type:varchar(500)" json:"s3_key,omitempty"` // AWS S3 객체 키
+	RelatedMeetingID *int64    `json:"related_meeting_id,omitempty"`
+	CreatedAt        time.Time `gorm:"autoCreateTime" json:"created_at"`
+
+	// Relations
+	Workspace      Workspace      `gorm:"foreignKey:WorkspaceID" json:"workspace,omitempty"`
+	Uploader       *User          `gorm:"foreignKey:UploaderID" json:"uploader,omitempty"`
+	ParentFolder   *WorkspaceFile `gorm:"foreignKey:ParentFolderID" json:"parent_folder,omitempty"`
+	Children       []WorkspaceFile `gorm:"foreignKey:ParentFolderID" json:"children,omitempty"`
+	RelatedMeeting *Meeting       `gorm:"foreignKey:RelatedMeetingID" json:"related_meeting,omitempty"`
+}
+
+func (WorkspaceFile) TableName() string {
+	return "workspace_files"
 }
