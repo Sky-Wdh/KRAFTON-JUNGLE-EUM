@@ -23,6 +23,147 @@ interface SearchUsersResponse {
   total: number;
 }
 
+// 워크스페이스 관련 타입
+interface WorkspaceMember {
+  id: number;
+  user_id: number;
+  role_id?: number;
+  joined_at: string;
+  user?: UserSearchResult;
+}
+
+interface Workspace {
+  id: number;
+  name: string;
+  owner_id: number;
+  created_at: string;
+  owner?: UserSearchResult;
+  members?: WorkspaceMember[];
+}
+
+interface WorkspacesResponse {
+  workspaces: Workspace[];
+  total: number;
+}
+
+interface CreateWorkspaceRequest {
+  name: string;
+  member_ids?: number[];
+}
+
+// 채팅 관련 타입
+interface ChatMessage {
+  id: number;
+  meeting_id: number;
+  sender_id?: number;
+  message: string;
+  type: string;
+  created_at: string;
+  sender?: UserSearchResult;
+}
+
+interface ChatsResponse {
+  meeting_id: number;
+  messages: ChatMessage[];
+  total: number;
+}
+
+// 미팅 관련 타입
+interface Participant {
+  id: number;
+  user_id?: number;
+  role: string;
+  joined_at: string;
+  left_at?: string;
+  user?: UserSearchResult;
+}
+
+interface Meeting {
+  id: number;
+  workspace_id?: number;
+  host_id: number;
+  title: string;
+  code: string;
+  type: string;
+  status: string;
+  started_at?: string;
+  ended_at?: string;
+  host?: UserSearchResult;
+  participants?: Participant[];
+}
+
+interface MeetingsResponse {
+  meetings: Meeting[];
+  total: number;
+}
+
+interface CreateMeetingRequest {
+  title: string;
+  type?: string;
+}
+
+// 캘린더 관련 타입
+interface EventAttendee {
+  user_id: number;
+  status: string;
+  created_at: string;
+  user?: UserSearchResult;
+}
+
+interface CalendarEvent {
+  id: number;
+  workspace_id: number;
+  creator_id?: number;
+  title: string;
+  description?: string;
+  start_at: string;
+  end_at: string;
+  is_all_day: boolean;
+  linked_meeting_id?: number;
+  color?: string;
+  created_at: string;
+  creator?: UserSearchResult;
+  attendees?: EventAttendee[];
+}
+
+interface EventsResponse {
+  events: CalendarEvent[];
+  total: number;
+}
+
+interface CreateEventRequest {
+  title: string;
+  description?: string;
+  start_at: string;
+  end_at: string;
+  is_all_day?: boolean;
+  color?: string;
+  attendee_ids?: number[];
+}
+
+// 저장소 관련 타입
+interface WorkspaceFile {
+  id: number;
+  workspace_id: number;
+  uploader_id?: number;
+  parent_folder_id?: number;
+  name: string;
+  type: string;
+  file_url?: string;
+  file_size?: number;
+  mime_type?: string;
+  related_meeting_id?: number;
+  created_at: string;
+  uploader?: UserSearchResult;
+  children?: WorkspaceFile[];
+}
+
+interface FilesResponse {
+  files: WorkspaceFile[];
+  total: number;
+  breadcrumbs?: WorkspaceFile[];
+}
+
 // HTTP-only 쿠키 기반 인증 (XSS 방지)
 class ApiClient {
   private isLoggedIn: boolean = false;
@@ -131,7 +272,225 @@ class ApiClient {
       `/api/users/search?q=${encodeURIComponent(query)}`
     );
   }
+
+  // 워크스페이스 생성
+  async createWorkspace(data: CreateWorkspaceRequest): Promise<Workspace> {
+    return this.request<Workspace>('/api/workspaces/', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  // 내 워크스페이스 목록 조회
+  async getMyWorkspaces(): Promise<WorkspacesResponse> {
+    return this.request<WorkspacesResponse>('/api/workspaces/');
+  }
+
+  // 워크스페이스 상세 조회
+  async getWorkspace(id: number): Promise<Workspace> {
+    return this.request<Workspace>(`/api/workspaces/${id}`);
+  }
+
+  // 워크스페이스 멤버 추가
+  async addWorkspaceMembers(workspaceId: number, memberIds: number[]): Promise<{ message: string; added_count: number }> {
+    return this.request(`/api/workspaces/${workspaceId}/members`, {
+      method: 'POST',
+      body: JSON.stringify({ member_ids: memberIds }),
+    });
+  }
+
+  // ========== 채팅 API ==========
+  async getWorkspaceChats(workspaceId: number, limit = 50, offset = 0): Promise<ChatsResponse> {
+    return this.request<ChatsResponse>(
+      `/api/workspaces/${workspaceId}/chats?limit=${limit}&offset=${offset}`
+    );
+  }
+
+  async sendMessage(workspaceId: number, message: string, type = 'TEXT'): Promise<ChatMessage> {
+    return this.request<ChatMessage>(`/api/workspaces/${workspaceId}/chats`, {
+      method: 'POST',
+      body: JSON.stringify({ message, type }),
+    });
+  }
+
+  // ========== 미팅 API ==========
+  async getWorkspaceMeetings(workspaceId: number): Promise<MeetingsResponse> {
+    return this.request<MeetingsResponse>(`/api/workspaces/${workspaceId}/meetings`);
+  }
+
+  async createMeeting(workspaceId: number, data: CreateMeetingRequest): Promise<Meeting> {
+    return this.request<Meeting>(`/api/workspaces/${workspaceId}/meetings`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getMeeting(workspaceId: number, meetingId: number): Promise<Meeting> {
+    return this.request<Meeting>(`/api/workspaces/${workspaceId}/meetings/${meetingId}`);
+  }
+
+  async startMeeting(workspaceId: number, meetingId: number): Promise<Meeting> {
+    return this.request<Meeting>(`/api/workspaces/${workspaceId}/meetings/${meetingId}/start`, {
+      method: 'POST',
+    });
+  }
+
+  async endMeeting(workspaceId: number, meetingId: number): Promise<{ message: string }> {
+    return this.request(`/api/workspaces/${workspaceId}/meetings/${meetingId}/end`, {
+      method: 'POST',
+    });
+  }
+
+  // ========== 캘린더 API ==========
+  async getWorkspaceEvents(workspaceId: number, startDate?: string, endDate?: string): Promise<EventsResponse> {
+    let url = `/api/workspaces/${workspaceId}/events`;
+    const params = new URLSearchParams();
+    if (startDate) params.append('start_date', startDate);
+    if (endDate) params.append('end_date', endDate);
+    if (params.toString()) url += `?${params.toString()}`;
+    return this.request<EventsResponse>(url);
+  }
+
+  async createEvent(workspaceId: number, data: CreateEventRequest): Promise<CalendarEvent> {
+    return this.request<CalendarEvent>(`/api/workspaces/${workspaceId}/events`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async updateEvent(workspaceId: number, eventId: number, data: Partial<CreateEventRequest>): Promise<CalendarEvent> {
+    return this.request<CalendarEvent>(`/api/workspaces/${workspaceId}/events/${eventId}`, {
+      method: 'PUT',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteEvent(workspaceId: number, eventId: number): Promise<{ message: string }> {
+    return this.request(`/api/workspaces/${workspaceId}/events/${eventId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async updateEventStatus(workspaceId: number, eventId: number, status: 'PENDING' | 'ACCEPTED' | 'DECLINED'): Promise<{ message: string; status: string }> {
+    return this.request(`/api/workspaces/${workspaceId}/events/${eventId}/status`, {
+      method: 'PUT',
+      body: JSON.stringify({ status }),
+    });
+  }
+
+  // ========== 저장소 API ==========
+  async getWorkspaceFiles(workspaceId: number, parentFolderId?: number): Promise<FilesResponse> {
+    let url = `/api/workspaces/${workspaceId}/files`;
+    if (parentFolderId) url += `?parent_folder_id=${parentFolderId}`;
+    return this.request<FilesResponse>(url);
+  }
+
+  async createFolder(workspaceId: number, name: string, parentFolderId?: number): Promise<WorkspaceFile> {
+    return this.request<WorkspaceFile>(`/api/workspaces/${workspaceId}/files/folder`, {
+      method: 'POST',
+      body: JSON.stringify({ name, parent_folder_id: parentFolderId }),
+    });
+  }
+
+  async uploadFileMetadata(workspaceId: number, data: {
+    name: string;
+    file_url: string;
+    file_size: number;
+    mime_type: string;
+    parent_folder_id?: number;
+  }): Promise<WorkspaceFile> {
+    return this.request<WorkspaceFile>(`/api/workspaces/${workspaceId}/files`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async deleteFile(workspaceId: number, fileId: number): Promise<{ message: string }> {
+    return this.request(`/api/workspaces/${workspaceId}/files/${fileId}`, {
+      method: 'DELETE',
+    });
+  }
+
+  async renameFile(workspaceId: number, fileId: number, name: string): Promise<WorkspaceFile> {
+    return this.request<WorkspaceFile>(`/api/workspaces/${workspaceId}/files/${fileId}`, {
+      method: 'PUT',
+      body: JSON.stringify({ name }),
+    });
+  }
+
+  // ========== S3 파일 업로드 API ==========
+  async getPresignedURL(workspaceId: number, fileName: string, contentType: string, parentFolderId?: number): Promise<{
+    upload_url: string;
+    key: string;
+    expires_at: string;
+    parent_folder_id?: number;
+  }> {
+    return this.request(`/api/workspaces/${workspaceId}/files/presign`, {
+      method: 'POST',
+      body: JSON.stringify({
+        file_name: fileName,
+        content_type: contentType,
+        parent_folder_id: parentFolderId,
+      }),
+    });
+  }
+
+  async confirmUpload(workspaceId: number, data: {
+    name: string;
+    key: string;
+    file_size: number;
+    mime_type: string;
+    parent_folder_id?: number;
+  }): Promise<WorkspaceFile> {
+    return this.request<WorkspaceFile>(`/api/workspaces/${workspaceId}/files/confirm`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  }
+
+  async getDownloadURL(workspaceId: number, fileId: number): Promise<{ url: string }> {
+    return this.request(`/api/workspaces/${workspaceId}/files/${fileId}/download`);
+  }
+
+  // 파일을 S3에 직접 업로드 (Presigned URL 사용)
+  async uploadFileToS3(uploadUrl: string, file: File): Promise<void> {
+    const response = await fetch(uploadUrl, {
+      method: 'PUT',
+      body: file,
+      headers: {
+        'Content-Type': file.type,
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error('Failed to upload file to S3');
+    }
+  }
 }
 
 export const apiClient = new ApiClient();
-export type { AuthResponse, UserSearchResult, SearchUsersResponse };
+export type {
+  AuthResponse,
+  UserSearchResult,
+  SearchUsersResponse,
+  Workspace,
+  WorkspaceMember,
+  WorkspacesResponse,
+  CreateWorkspaceRequest,
+  // Chat
+  ChatMessage,
+  ChatsResponse,
+  // Meeting
+  Meeting,
+  Participant,
+  MeetingsResponse,
+  CreateMeetingRequest,
+  // Calendar
+  CalendarEvent,
+  EventAttendee,
+  EventsResponse,
+  CreateEventRequest,
+  // Storage
+  WorkspaceFile,
+  FilesResponse,
+};

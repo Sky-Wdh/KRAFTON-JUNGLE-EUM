@@ -1,20 +1,15 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import { useAuth } from "../../lib/auth-context";
+import { apiClient, Workspace } from "../../lib/api";
 import Sidebar from "./components/Sidebar";
 import MembersSection from "./components/MembersSection";
 import ChatSection from "./components/ChatSection";
 import CallsSection from "./components/CallsSection";
 import CalendarSection from "./components/CalendarSection";
 import StorageSection from "./components/StorageSection";
-
-// 임시 워크스페이스 데이터
-const mockWorkspace = {
-  id: 1,
-  name: "프로젝트 A",
-};
 
 export default function WorkspaceDetailPage() {
   const router = useRouter();
@@ -23,13 +18,47 @@ export default function WorkspaceDetailPage() {
   const [activeSection, setActiveSection] = useState("members");
   const [isSidebarCollapsed, setIsSidebarCollapsed] = useState(false);
 
+  // 워크스페이스 데이터
+  const [workspace, setWorkspace] = useState<Workspace | null>(null);
+  const [isLoadingWorkspace, setIsLoadingWorkspace] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  // 워크스페이스 조회
+  const fetchWorkspace = useCallback(async () => {
+    const workspaceId = Number(params.id);
+    if (isNaN(workspaceId)) {
+      setError("잘못된 워크스페이스 ID입니다.");
+      setIsLoadingWorkspace(false);
+      return;
+    }
+
+    try {
+      setIsLoadingWorkspace(true);
+      const data = await apiClient.getWorkspace(workspaceId);
+      setWorkspace(data);
+      setError(null);
+    } catch (err) {
+      console.error("Failed to fetch workspace:", err);
+      setError("워크스페이스를 불러올 수 없습니다.");
+    } finally {
+      setIsLoadingWorkspace(false);
+    }
+  }, [params.id]);
+
   useEffect(() => {
     if (!isLoading && !isAuthenticated) {
       router.push("/");
     }
   }, [isLoading, isAuthenticated, router]);
 
-  if (isLoading) {
+  // 워크스페이스 로드
+  useEffect(() => {
+    if (isAuthenticated) {
+      fetchWorkspace();
+    }
+  }, [isAuthenticated, fetchWorkspace]);
+
+  if (isLoading || isLoadingWorkspace) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-white">
         <img
@@ -45,33 +74,47 @@ export default function WorkspaceDetailPage() {
     return null;
   }
 
+  if (error || !workspace) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-white gap-4">
+        <p className="text-black/50">{error || "워크스페이스를 찾을 수 없습니다."}</p>
+        <button
+          onClick={() => router.push("/workspace")}
+          className="text-sm text-black/70 hover:text-black underline"
+        >
+          워크스페이스 목록으로 돌아가기
+        </button>
+      </div>
+    );
+  }
+
   const renderContent = () => {
     // 통화방 채널 처리
     if (activeSection.startsWith("call-")) {
-      return <CallsSection channelId={activeSection} />;
+      return <CallsSection workspaceId={workspace.id} channelId={activeSection} />;
     }
 
     switch (activeSection) {
       case "members":
-        return <MembersSection />;
+        return <MembersSection workspace={workspace} />;
       case "chat":
-        return <ChatSection />;
+        return <ChatSection workspaceId={workspace.id} />;
       case "calls":
-        return <CallsSection />;
+        return <CallsSection workspaceId={workspace.id} />;
       case "calendar":
-        return <CalendarSection />;
+        return <CalendarSection workspaceId={workspace.id} />;
       case "storage":
-        return <StorageSection />;
+        return <StorageSection workspaceId={workspace.id} />;
       default:
-        return <MembersSection />;
+        return <MembersSection workspace={workspace} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-white flex">
+    <div className="h-screen bg-white flex overflow-hidden">
       {/* Sidebar */}
       <Sidebar
-        workspaceName={mockWorkspace.name}
+        workspaceName={workspace.name}
         activeSection={activeSection}
         onSectionChange={setActiveSection}
         isCollapsed={isSidebarCollapsed}

@@ -1,209 +1,433 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { apiClient, ChatMessage } from "../../../lib/api";
+import { useAuth } from "../../../lib/auth-context";
 
-interface Message {
-  id: number;
-  sender: {
-    id: number;
-    name: string;
-    profileImg?: string;
-  };
-  content: string;
-  timestamp: string;
-  isMe?: boolean;
+interface ChatSectionProps {
+  workspaceId: number;
 }
 
-const mockMessages: Message[] = [
-  {
-    id: 1,
-    sender: { id: 2, name: "이영희" },
-    content: "오늘 회의 시간 확정됐나요?",
-    timestamp: "오전 10:23",
-  },
-  {
-    id: 2,
-    sender: { id: 1, name: "나" },
-    content: "네, 오후 2시로 확정됐어요!",
-    timestamp: "오전 10:25",
-    isMe: true,
-  },
-  {
-    id: 3,
-    sender: { id: 3, name: "박민수" },
-    content: "알겠습니다. 회의 자료는 제가 준비할게요.",
-    timestamp: "오전 10:28",
-  },
-  {
-    id: 4,
-    sender: { id: 2, name: "이영희" },
-    content: "좋아요! 저는 발표 슬라이드 마무리하고 있을게요. 혹시 추가로 필요한 자료 있으면 말씀해주세요.",
-    timestamp: "오전 10:30",
-  },
-  {
-    id: 5,
-    sender: { id: 4, name: "정수진" },
-    content: "회의 링크도 공유해주실 수 있을까요?",
-    timestamp: "오전 10:45",
-  },
-  {
-    id: 6,
-    sender: { id: 1, name: "나" },
-    content: "네, 곧 캘린더에 초대 보내드릴게요!",
-    timestamp: "오전 10:47",
-    isMe: true,
-  },
-];
+interface TypingUser {
+  userId: number;
+  nickname: string;
+}
 
-export default function ChatSection() {
+interface WSMessage {
+  type: string;
+  payload?: {
+    id?: number;
+    message?: string;
+    sender_id?: number;
+    nickname?: string;
+    created_at?: string;
+    user_id?: number;
+  };
+}
+
+const WS_BASE_URL = process.env.NEXT_PUBLIC_CHAT_WS_URL || 'ws://localhost:8080';
+
+export default function ChatSection({ workspaceId }: ChatSectionProps) {
+  const { user } = useAuth();
   const [message, setMessage] = useState("");
-  const [messages, setMessages] = useState(mockMessages);
+  const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [isLoading, setIsLoading] = useState(true);
+  const [isSending, setIsSending] = useState(false);
+  const [typingUsers, setTypingUsers] = useState<TypingUser[]>([]);
+  const [lastSentTime, setLastSentTime] = useState(0);
+  const messagesContainerRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+  const typingTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+  const isTypingRef = useRef(false);
+  const isComposingRef = useRef(false);
+
+  // 스팸 방지: 1초에 1개 메시지만 허용
+  const SPAM_COOLDOWN = 1000;
 
   const scrollToBottom = () => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (messagesContainerRef.current) {
+      messagesContainerRef.current.scrollTop = messagesContainerRef.current.scrollHeight;
+    }
   };
+
+  // 초기 메시지 로드
+  const loadMessages = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await apiClient.getWorkspaceChats(workspaceId);
+      setMessages(response.messages);
+    } catch (error) {
+      console.error("Failed to load messages:", error);
+    } finally {
+      setIsLoading(false);
+    }
+  }, [workspaceId]);
+
+  // WebSocket 연결
+  useEffect(() => {
+    loadMessages();
+
+    let isMounted = true;
+    let reconnectTimeout: NodeJS.Timeout | null = null;
+
+    const connectWebSocket = () => {
+      if (!isMounted) return;
+
+      const ws = new WebSocket(`${WS_BASE_URL}/ws/chat/${workspaceId}`);
+      wsRef.current = ws;
+
+      ws.onopen = () => {
+        if (isMounted) {
+          console.log("Chat WebSocket connected");
+        }
+      };
+
+      ws.onmessage = (event) => {
+        if (!isMounted) return;
+
+        try {
+          const data: WSMessage = JSON.parse(event.data);
+
+          switch (data.type) {
+            case "message":
+              if (data.payload && data.payload.id) {
+                const newMsg: ChatMessage = {
+                  id: data.payload.id,
+                  meeting_id: 0,
+                  sender_id: data.payload.sender_id,
+                  message: data.payload.message || "",
+                  type: "TEXT",
+                  created_at: data.payload.created_at || new Date().toISOString(),
+                  sender: {
+                    id: data.payload.sender_id || 0,
+                    email: "",
+                    nickname: data.payload.nickname || "",
+                  },
+                };
+                // 중복 메시지 방지
+                setMessages((prev) => {
+                  if (prev.some((m) => m.id === newMsg.id)) {
+                    return prev;
+                  }
+                  return [...prev, newMsg];
+                });
+              }
+              break;
+
+            case "typing":
+              if (data.payload?.user_id && data.payload?.nickname) {
+                const userId = data.payload.user_id;
+                const nickname = data.payload.nickname;
+                setTypingUsers((prev) => {
+                  if (prev.find((u) => u.userId === userId)) {
+                    return prev;
+                  }
+                  return [...prev, { userId, nickname }];
+                });
+              }
+              break;
+
+            case "stop_typing":
+              if (data.payload?.user_id) {
+                setTypingUsers((prev) =>
+                  prev.filter((u) => u.userId !== data.payload?.user_id)
+                );
+              }
+              break;
+          }
+        } catch (e) {
+          console.error("Failed to parse WebSocket message:", e);
+        }
+      };
+
+      ws.onclose = () => {
+        if (isMounted) {
+          console.log("Chat WebSocket disconnected");
+          // 재연결 시도
+          reconnectTimeout = setTimeout(connectWebSocket, 3000);
+        }
+      };
+
+      ws.onerror = () => {
+        // Strict Mode에서 발생하는 에러는 무시
+        if (!isMounted) return;
+      };
+    };
+
+    connectWebSocket();
+
+    return () => {
+      isMounted = false;
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
+      if (wsRef.current) {
+        wsRef.current.close();
+      }
+    };
+  }, [workspaceId, loadMessages]);
 
   useEffect(() => {
     scrollToBottom();
   }, [messages]);
 
-  const handleSend = () => {
-    if (!message.trim()) return;
-
-    const newMessage: Message = {
-      id: messages.length + 1,
-      sender: { id: 1, name: "나" },
-      content: message,
-      timestamp: new Date().toLocaleTimeString("ko-KR", {
-        hour: "numeric",
-        minute: "2-digit",
-        hour12: true,
-      }),
-      isMe: true,
-    };
-
-    setMessages([...messages, newMessage]);
-    setMessage("");
+  // 타이핑 상태 전송
+  const sendTypingStatus = (isTyping: boolean) => {
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: isTyping ? "typing" : "stop_typing",
+        })
+      );
+    }
   };
 
-  const handleKeyPress = (e: React.KeyboardEvent) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+  // 입력 중 처리
+  const handleInputChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setMessage(e.target.value);
+
+    // 타이핑 상태 전송
+    if (!isTypingRef.current && e.target.value.length > 0) {
+      isTypingRef.current = true;
+      sendTypingStatus(true);
+    }
+
+    // 타이핑 타임아웃 리셋
+    if (typingTimeoutRef.current) {
+      clearTimeout(typingTimeoutRef.current);
+    }
+
+    typingTimeoutRef.current = setTimeout(() => {
+      if (isTypingRef.current) {
+        isTypingRef.current = false;
+        sendTypingStatus(false);
+      }
+    }, 2000);
+  };
+
+  const handleSend = async () => {
+    if (!message.trim() || isSending) return;
+
+    // 스팸 방지
+    const now = Date.now();
+    if (now - lastSentTime < SPAM_COOLDOWN) {
+      return;
+    }
+
+    // 타이핑 상태 해제
+    if (isTypingRef.current) {
+      isTypingRef.current = false;
+      sendTypingStatus(false);
+    }
+
+    // WebSocket으로 메시지 전송
+    if (wsRef.current?.readyState === WebSocket.OPEN) {
+      wsRef.current.send(
+        JSON.stringify({
+          type: "message",
+          payload: {
+            message: message.trim(),
+          },
+        })
+      );
+      setMessage("");
+      setLastSentTime(now);
+    } else {
+      // Fallback: REST API 사용
+      try {
+        setIsSending(true);
+        const newMessage = await apiClient.sendMessage(workspaceId, message.trim());
+        setMessages((prev) => [...prev, newMessage]);
+        setMessage("");
+        setLastSentTime(now);
+      } catch (error) {
+        console.error("Failed to send message:", error);
+      } finally {
+        setIsSending(false);
+      }
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (e.key === "Enter" && !e.shiftKey && !isComposingRef.current) {
       e.preventDefault();
       handleSend();
     }
   };
 
+  const handleCompositionStart = () => {
+    isComposingRef.current = true;
+  };
+
+  const handleCompositionEnd = () => {
+    isComposingRef.current = false;
+  };
+
+  const formatTime = (dateString: string) => {
+    const date = new Date(dateString);
+    return date.toLocaleTimeString("ko-KR", {
+      hour: "numeric",
+      minute: "2-digit",
+      hour12: true,
+    });
+  };
+
+  const isMyMessage = (msg: ChatMessage) => {
+    return msg.sender_id === user?.id;
+  };
+
+  if (isLoading) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="w-8 h-8 border-2 border-black/20 border-t-black/60 rounded-full animate-spin" />
+      </div>
+    );
+  }
+
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col bg-white overflow-hidden">
       {/* Header */}
       <div className="px-8 py-5 border-b border-black/5 flex items-center justify-between">
         <div>
           <h1 className="text-xl font-semibold text-black">팀 채팅</h1>
-          <p className="text-sm text-black/40 mt-0.5">6명의 멤버</p>
-        </div>
-        <div className="flex items-center gap-2">
-          <button className="p-2 rounded-lg hover:bg-black/5 text-black/40 hover:text-black/70 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-            </svg>
-          </button>
-          <button className="p-2 rounded-lg hover:bg-black/5 text-black/40 hover:text-black/70 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
-            </svg>
-          </button>
+          <p className="text-sm text-black/40 mt-0.5">
+            {messages.length}개의 메시지
+            {typingUsers.length > 0 && (
+              <span className="ml-2 text-black/60 animate-pulse">
+                · {typingUsers.map((u) => u.nickname).join(", ")} 입력 중...
+              </span>
+            )}
+          </p>
         </div>
       </div>
 
       {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-8 py-6">
-        <div className="space-y-4">
-          {messages.map((msg, index) => {
-            const showAvatar =
-              index === 0 || messages[index - 1].sender.id !== msg.sender.id;
+      <div ref={messagesContainerRef} className="flex-1 overflow-y-auto px-8 py-6">
+        {messages.length === 0 ? (
+          <div className="h-full flex flex-col items-center justify-center text-black/40">
+            <svg className="w-16 h-16 mb-4 opacity-30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+            </svg>
+            <p>아직 메시지가 없습니다</p>
+            <p className="text-sm mt-1">첫 메시지를 보내보세요!</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {messages.map((msg, index) => {
+              const isMe = isMyMessage(msg);
+              const showAvatar =
+                index === 0 || messages[index - 1].sender_id !== msg.sender_id;
+              const showName = showAvatar && !isMe;
 
-            return (
-              <div
-                key={msg.id}
-                className={`flex gap-3 ${msg.isMe ? "flex-row-reverse" : ""}`}
-              >
-                {/* Avatar */}
-                <div className="w-9 flex-shrink-0">
-                  {showAvatar && !msg.isMe && (
-                    <div className="w-9 h-9 rounded-full bg-gradient-to-br from-black/10 to-black/5 flex items-center justify-center">
-                      <span className="text-xs font-medium text-black/50">
-                        {msg.sender.name.charAt(0)}
+              return (
+                <div
+                  key={msg.id}
+                  className={`flex ${isMe ? "justify-end" : "justify-start"}`}
+                >
+                  <div className={`flex gap-2 max-w-[75%] ${isMe ? "flex-row-reverse" : ""}`}>
+                    {/* Avatar */}
+                    {!isMe && (
+                      <div className="w-8 flex-shrink-0 self-end">
+                        {showAvatar && (
+                          msg.sender?.profile_img ? (
+                            <img
+                              src={msg.sender.profile_img}
+                              alt={msg.sender.nickname}
+                              className="w-8 h-8 rounded-full object-cover"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-gradient-to-br from-gray-200 to-gray-100 flex items-center justify-center">
+                              <span className="text-xs font-medium text-gray-500">
+                                {msg.sender?.nickname?.charAt(0) || "?"}
+                              </span>
+                            </div>
+                          )
+                        )}
+                      </div>
+                    )}
+
+                    {/* Message Bubble */}
+                    <div className={`flex flex-col ${isMe ? "items-end" : "items-start"}`}>
+                      {showName && (
+                        <span className="text-xs text-black/50 mb-1 ml-1">
+                          {msg.sender?.nickname || "알 수 없음"}
+                        </span>
+                      )}
+                      <div
+                        className={`px-4 py-2 rounded-full ${
+                          isMe
+                            ? "bg-black text-white"
+                            : "bg-gray-100 text-black"
+                        }`}
+                        style={{
+                          borderRadius: isMe
+                            ? "20px 20px 4px 20px"
+                            : "20px 20px 20px 4px",
+                        }}
+                      >
+                        <p className="text-sm leading-relaxed whitespace-pre-wrap break-words">
+                          {msg.message}
+                        </p>
+                      </div>
+                      <span className="text-[10px] text-black/30 mt-0.5 mx-1">
+                        {formatTime(msg.created_at)}
                       </span>
                     </div>
-                  )}
-                </div>
-
-                {/* Message */}
-                <div className={`max-w-[70%] ${msg.isMe ? "items-end" : ""}`}>
-                  {showAvatar && !msg.isMe && (
-                    <div className="flex items-center gap-2 mb-1">
-                      <span className="text-sm font-medium text-black">
-                        {msg.sender.name}
-                      </span>
-                      <span className="text-xs text-black/30">{msg.timestamp}</span>
-                    </div>
-                  )}
-                  <div
-                    className={`px-4 py-2.5 rounded-2xl ${
-                      msg.isMe
-                        ? "bg-black text-white rounded-tr-md"
-                        : "bg-black/[0.04] text-black rounded-tl-md"
-                    }`}
-                  >
-                    <p className="text-sm leading-relaxed">{msg.content}</p>
                   </div>
-                  {msg.isMe && (
-                    <p className="text-xs text-black/30 mt-1 text-right">
-                      {msg.timestamp}
-                    </p>
-                  )}
                 </div>
-              </div>
-            );
-          })}
-          <div ref={messagesEndRef} />
-        </div>
+              );
+            })}
+            <div ref={messagesEndRef} />
+          </div>
+        )}
       </div>
 
+      {/* Typing Indicator */}
+      {typingUsers.length > 0 && (
+        <div className="px-8 py-2">
+          <div className="flex items-center gap-2 text-sm text-black/50">
+            <div className="flex gap-1">
+              <span className="w-1.5 h-1.5 bg-black/40 rounded-full animate-bounce" style={{ animationDelay: "0ms" }} />
+              <span className="w-1.5 h-1.5 bg-black/40 rounded-full animate-bounce" style={{ animationDelay: "150ms" }} />
+              <span className="w-1.5 h-1.5 bg-black/40 rounded-full animate-bounce" style={{ animationDelay: "300ms" }} />
+            </div>
+            <span>{typingUsers.map((u) => u.nickname).join(", ")} 입력 중</span>
+          </div>
+        </div>
+      )}
+
       {/* Input */}
-      <div className="px-8 py-4 border-t border-black/5">
-        <div className="flex items-end gap-3 bg-black/[0.03] rounded-2xl p-2">
-          <button className="p-2 rounded-xl hover:bg-black/5 text-black/40 hover:text-black/70 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
-            </svg>
-          </button>
+      <div className="px-6 py-4 border-t border-black/5">
+        <div className="flex items-center gap-3 bg-gray-100 rounded-full px-4 py-2 focus-within:bg-gray-50 focus-within:ring-2 focus-within:ring-black/10 transition-all">
           <textarea
             value={message}
-            onChange={(e) => setMessage(e.target.value)}
-            onKeyPress={handleKeyPress}
-            placeholder="메시지를 입력하세요..."
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            onCompositionStart={handleCompositionStart}
+            onCompositionEnd={handleCompositionEnd}
+            placeholder="메시지 입력..."
             rows={1}
-            className="flex-1 bg-transparent border-0 resize-none text-sm placeholder:text-black/30 focus:outline-none py-2 max-h-32"
+            className="flex-1 bg-transparent resize-none text-[15px] text-black placeholder:text-black/40 focus:outline-none focus:ring-0 focus:border-0 border-0 outline-none ring-0 py-2 max-h-32 leading-relaxed"
+            style={{ outline: 'none', boxShadow: 'none' }}
           />
-          <button className="p-2 rounded-xl hover:bg-black/5 text-black/40 hover:text-black/70 transition-colors">
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M14.828 14.828a4 4 0 01-5.656 0M9 10h.01M15 10h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </button>
           <button
             onClick={handleSend}
-            disabled={!message.trim()}
-            className={`p-2.5 rounded-xl transition-all ${
-              message.trim()
+            disabled={!message.trim() || isSending}
+            className={`p-2.5 rounded-full transition-all flex-shrink-0 ${
+              message.trim() && !isSending
                 ? "bg-black text-white hover:bg-black/80"
                 : "bg-black/10 text-black/30 cursor-not-allowed"
             }`}
           >
-            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
-            </svg>
+            {isSending ? (
+              <div className="w-5 h-5 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+            ) : (
+              <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none">
+                <path d="M22 2L11 13" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+                <path d="M22 2L15 22L11 13L2 9L22 2Z" stroke="currentColor" strokeWidth={2} strokeLinecap="round" strokeLinejoin="round"/>
+              </svg>
+            )}
           </button>
         </div>
       </div>

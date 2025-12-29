@@ -18,17 +18,24 @@ import (
 	"realtime-backend/internal/auth"
 	"realtime-backend/internal/config"
 	"realtime-backend/internal/handler"
+	"realtime-backend/internal/storage"
 )
 
 // Server Fiber 서버 래퍼
 type Server struct {
-	app         *fiber.App
-	cfg         *config.Config
-	db          *gorm.DB
-	handler     *handler.AudioHandler
-	authHandler *handler.AuthHandler
-	userHandler *handler.UserHandler
-	jwtManager  *auth.JWTManager
+	app              *fiber.App
+	cfg              *config.Config
+	db               *gorm.DB
+	handler          *handler.AudioHandler
+	authHandler      *handler.AuthHandler
+	userHandler      *handler.UserHandler
+	workspaceHandler *handler.WorkspaceHandler
+	chatHandler      *handler.ChatHandler
+	chatWSHandler    *handler.ChatWSHandler
+	meetingHandler   *handler.MeetingHandler
+	calendarHandler  *handler.CalendarHandler
+	storageHandler   *handler.StorageHandler
+	jwtManager       *auth.JWTManager
 }
 
 // New 새 서버 인스턴스 생성
@@ -57,15 +64,41 @@ func New(cfg *config.Config, db *gorm.DB) *Server {
 	googleAuth := auth.NewGoogleAuthenticator(cfg.Auth.GoogleClientID)
 	authHandler := handler.NewAuthHandler(db, jwtManager, googleAuth, cfg.Auth.SecureCookie)
 	userHandler := handler.NewUserHandler(db)
+	workspaceHandler := handler.NewWorkspaceHandler(db)
+	chatHandler := handler.NewChatHandler(db)
+	chatWSHandler := handler.NewChatWSHandler(db)
+	meetingHandler := handler.NewMeetingHandler(db)
+	calendarHandler := handler.NewCalendarHandler(db)
+
+	// S3 서비스 초기화 (선택적)
+	var s3Service *storage.S3Service
+	if cfg.S3.BucketName != "" && cfg.S3.AccessKeyID != "" {
+		var err error
+		s3Service, err = storage.NewS3Service(&cfg.S3)
+		if err != nil {
+			log.Printf("⚠️ S3 service initialization failed: %v (file upload will be disabled)", err)
+		} else {
+			log.Printf("✅ S3 service initialized (bucket: %s)", cfg.S3.BucketName)
+		}
+	} else {
+		log.Println("ℹ️ S3 service not configured (file upload will be disabled)")
+	}
+	storageHandler := handler.NewStorageHandler(db, s3Service)
 
 	return &Server{
-		app:         app,
-		cfg:         cfg,
-		db:          db,
-		handler:     handler.NewAudioHandler(cfg),
-		authHandler: authHandler,
-		userHandler: userHandler,
-		jwtManager:  jwtManager,
+		app:              app,
+		cfg:              cfg,
+		db:               db,
+		handler:          handler.NewAudioHandler(cfg),
+		authHandler:      authHandler,
+		userHandler:      userHandler,
+		workspaceHandler: workspaceHandler,
+		chatHandler:      chatHandler,
+		chatWSHandler:    chatWSHandler,
+		meetingHandler:   meetingHandler,
+		calendarHandler:  calendarHandler,
+		storageHandler:   storageHandler,
+		jwtManager:       jwtManager,
 	}
 }
 
@@ -127,6 +160,43 @@ func (s *Server) SetupRoutes() {
 	userGroup := s.app.Group("/api/users", auth.AuthMiddleware(s.jwtManager))
 	userGroup.Get("/search", s.userHandler.SearchUsers)
 
+	// Workspace 라우트 그룹 (인증 필요)
+	workspaceGroup := s.app.Group("/api/workspaces", auth.AuthMiddleware(s.jwtManager))
+	workspaceGroup.Post("/", s.workspaceHandler.CreateWorkspace)
+	workspaceGroup.Get("/", s.workspaceHandler.GetMyWorkspaces)
+	workspaceGroup.Get("/:id", s.workspaceHandler.GetWorkspace)
+	workspaceGroup.Post("/:id/members", s.workspaceHandler.AddMembers)
+
+	// Chat 라우트 (워크스페이스 하위)
+	workspaceGroup.Get("/:workspaceId/chats", s.chatHandler.GetWorkspaceChats)
+	workspaceGroup.Post("/:workspaceId/chats", s.chatHandler.SendMessage)
+
+	// Meeting 라우트 (워크스페이스 하위)
+	workspaceGroup.Get("/:workspaceId/meetings", s.meetingHandler.GetWorkspaceMeetings)
+	workspaceGroup.Post("/:workspaceId/meetings", s.meetingHandler.CreateMeeting)
+	workspaceGroup.Get("/:workspaceId/meetings/:meetingId", s.meetingHandler.GetMeeting)
+	workspaceGroup.Post("/:workspaceId/meetings/:meetingId/start", s.meetingHandler.StartMeeting)
+	workspaceGroup.Post("/:workspaceId/meetings/:meetingId/end", s.meetingHandler.EndMeeting)
+
+	// Calendar 라우트 (워크스페이스 하위)
+	workspaceGroup.Get("/:workspaceId/events", s.calendarHandler.GetWorkspaceEvents)
+	workspaceGroup.Post("/:workspaceId/events", s.calendarHandler.CreateEvent)
+	workspaceGroup.Put("/:workspaceId/events/:eventId", s.calendarHandler.UpdateEvent)
+	workspaceGroup.Delete("/:workspaceId/events/:eventId", s.calendarHandler.DeleteEvent)
+	workspaceGroup.Put("/:workspaceId/events/:eventId/status", s.calendarHandler.UpdateAttendeeStatus)
+
+	// Storage 라우트 (워크스페이스 하위)
+	workspaceGroup.Get("/:workspaceId/files", s.storageHandler.GetWorkspaceFiles)
+	workspaceGroup.Post("/:workspaceId/files/folder", s.storageHandler.CreateFolder)
+	workspaceGroup.Post("/:workspaceId/files", s.storageHandler.UploadFile)
+	workspaceGroup.Delete("/:workspaceId/files/:fileId", s.storageHandler.DeleteFile)
+	workspaceGroup.Put("/:workspaceId/files/:fileId", s.storageHandler.RenameFile)
+
+	// S3 파일 업로드 라우트
+	workspaceGroup.Post("/:workspaceId/files/presign", s.storageHandler.GetPresignedURL)
+	workspaceGroup.Post("/:workspaceId/files/confirm", s.storageHandler.ConfirmUpload)
+	workspaceGroup.Get("/:workspaceId/files/:fileId/download", s.storageHandler.GetDownloadURL)
+
 	// WebSocket 업그레이드 체크 미들웨어
 	s.app.Use("/ws", func(c *fiber.Ctx) error {
 		if websocket.IsWebSocketUpgrade(c) {
@@ -140,6 +210,62 @@ func (s *Server) SetupRoutes() {
 	s.app.Get("/ws/audio", websocket.New(s.handler.HandleWebSocket, websocket.Config{
 		ReadBufferSize:  s.cfg.WebSocket.ReadBufferSize,
 		WriteBufferSize: s.cfg.WebSocket.WriteBufferSize,
+	}))
+
+	// WebSocket 채팅 엔드포인트
+	s.app.Get("/ws/chat/:workspaceId", func(c *fiber.Ctx) error {
+		if !websocket.IsWebSocketUpgrade(c) {
+			return fiber.ErrUpgradeRequired
+		}
+
+		// 쿠키에서 JWT 토큰 추출
+		accessToken := c.Cookies("access_token")
+		if accessToken == "" {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "authentication required",
+			})
+		}
+
+		// JWT 검증
+		claims, err := s.jwtManager.ValidateAccessToken(accessToken)
+		if err != nil {
+			return c.Status(fiber.StatusUnauthorized).JSON(fiber.Map{
+				"error": "invalid token",
+			})
+		}
+
+		workspaceID, err := c.ParamsInt("workspaceId")
+		if err != nil {
+			return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+				"error": "invalid workspace id",
+			})
+		}
+
+		// 멤버 확인
+		var count int64
+		s.db.Table("workspace_members").
+			Where("workspace_id = ? AND user_id = ?", workspaceID, claims.UserID).
+			Count(&count)
+		if count == 0 {
+			return c.Status(fiber.StatusForbidden).JSON(fiber.Map{
+				"error": "not a member of this workspace",
+			})
+		}
+
+		// 유저 정보 조회
+		var user struct {
+			Nickname string
+		}
+		s.db.Table("users").Select("nickname").Where("id = ?", claims.UserID).Scan(&user)
+
+		c.Locals("workspaceId", int64(workspaceID))
+		c.Locals("userId", claims.UserID)
+		c.Locals("nickname", user.Nickname)
+
+		return c.Next()
+	}, websocket.New(s.chatWSHandler.HandleWebSocket, websocket.Config{
+		ReadBufferSize:  4096,
+		WriteBufferSize: 4096,
 	}))
 }
 
