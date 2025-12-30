@@ -17,7 +17,7 @@ interface UseStorageFilesReturn {
   setSelectedFile: (file: WorkspaceFile | null) => void;
   fileStats: FileStats;
   loadFiles: () => Promise<void>;
-  handleFileClick: (file: WorkspaceFile) => Promise<{ isImage: boolean; imageUrl: string | null } | void>;
+  handleFileClick: (file: WorkspaceFile) => Promise<{ isMedia: boolean; mediaUrl: string | null } | void>;
   handleBreadcrumbClick: (folderId?: number) => void;
   handleCreateFolder: (name: string) => Promise<void>;
   handleDeleteFile: (file: WorkspaceFile) => Promise<void>;
@@ -86,13 +86,15 @@ export function useStorageFiles({ workspaceId }: UseStorageFilesProps): UseStora
 
     setSelectedFile(file);
     const isImage = file.mime_type?.startsWith("image/") || false;
+    const isVideo = file.mime_type?.startsWith("video/") || false;
+    const isMedia = isImage || isVideo;
 
-    if (isImage) {
+    if (isMedia) {
       try {
         const { url } = await apiClient.getDownloadURL(workspaceId, file.id);
-        return { isImage: true, imageUrl: url };
+        return { isMedia: true, mediaUrl: url };
       } catch {
-        return { isImage: true, imageUrl: file.file_url || null };
+        return { isMedia: true, mediaUrl: file.file_url || null };
       }
     } else {
       try {
@@ -117,8 +119,6 @@ export function useStorageFiles({ workspaceId }: UseStorageFilesProps): UseStora
   }, [workspaceId, currentFolderId]);
 
   const handleDeleteFile = useCallback(async (file: WorkspaceFile) => {
-    if (!confirm(`"${file.name}"을(를) 삭제하시겠습니까?`)) return;
-
     await apiClient.deleteFile(workspaceId, file.id);
     setFiles((prev) => prev.filter((f) => f.id !== file.id));
     if (selectedFile?.id === file.id) {

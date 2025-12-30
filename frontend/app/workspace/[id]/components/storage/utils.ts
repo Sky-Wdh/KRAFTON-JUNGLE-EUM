@@ -37,6 +37,16 @@ export const isImageFile = (file: WorkspaceFile): boolean => {
   return file.mime_type?.startsWith("image/") || false;
 };
 
+// 동영상 파일 여부 확인
+export const isVideoFile = (file: WorkspaceFile): boolean => {
+  return file.mime_type?.startsWith("video/") || false;
+};
+
+// 미디어 파일 여부 확인 (이미지 + 동영상)
+export const isMediaFile = (file: WorkspaceFile): boolean => {
+  return isImageFile(file) || isVideoFile(file);
+};
+
 // 파일 타입 구분
 export const getFileType = (file: WorkspaceFile): string => {
   if (file.type === "FOLDER") return "folder";

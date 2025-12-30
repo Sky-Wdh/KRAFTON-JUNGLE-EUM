@@ -36,6 +36,7 @@ export interface StorageSectionProps {
 export interface FileListViewProps {
   files: WorkspaceFile[];
   selectedFile: WorkspaceFile | null;
+  workspaceId: number;
   onFileClick: (file: WorkspaceFile) => void;
   onRename: (file: WorkspaceFile) => void;
   onDelete: (file: WorkspaceFile) => void;
@@ -44,6 +45,7 @@ export interface FileListViewProps {
 export interface FileGridViewProps {
   files: WorkspaceFile[];
   selectedFile: WorkspaceFile | null;
+  workspaceId: number;
   onFileClick: (file: WorkspaceFile) => void;
   onRename: (file: WorkspaceFile) => void;
   onDelete: (file: WorkspaceFile) => void;
@@ -100,10 +102,18 @@ export interface RenameModalProps {
   isRenaming: boolean;
 }
 
-export interface ImagePreviewModalProps {
+export interface MediaPreviewModalProps {
   file: WorkspaceFile | null;
-  imageUrl: string | null;
+  mediaUrl: string | null;
   onClose: () => void;
+}
+
+export interface DeleteModalProps {
+  isOpen: boolean;
+  file: WorkspaceFile | null;
+  onClose: () => void;
+  onDelete: () => Promise<void>;
+  isDeleting: boolean;
 }
 
 export type { WorkspaceFile };

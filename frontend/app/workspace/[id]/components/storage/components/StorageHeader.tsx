@@ -53,7 +53,7 @@ export default function StorageHeader({
           <button
             onClick={() => setShowNewDropdown(!showNewDropdown)}
             disabled={isUploading}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-gray-900 text-white text-sm rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-1.5 bg-gray-900 text-white text-sm font-medium rounded-full hover:bg-gray-800 transition-colors disabled:opacity-50"
           >
             {isUploading ? (
               <>
@@ -62,10 +62,10 @@ export default function StorageHeader({
               </>
             ) : (
               <>
-                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                 </svg>
-                새로 만들기
+                파일 추가
               </>
             )}
           </button>

@@ -12,7 +12,8 @@ import {
   DragOverlay,
   CreateFolderModal,
   RenameModal,
-  ImagePreviewModal,
+  DeleteModal,
+  MediaPreviewModal,
   WorkspaceFile,
 } from "./storage";
 
@@ -28,12 +29,15 @@ export default function StorageSection({ workspaceId }: StorageSectionProps) {
   // Modal state
   const [showCreateFolderModal, setShowCreateFolderModal] = useState(false);
   const [showRenameModal, setShowRenameModal] = useState(false);
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [renameTarget, setRenameTarget] = useState<WorkspaceFile | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<WorkspaceFile | null>(null);
   const [isCreating, setIsCreating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  // Image preview state
-  const [previewImage, setPreviewImage] = useState<WorkspaceFile | null>(null);
-  const [previewImageUrl, setPreviewImageUrl] = useState<string | null>(null);
+  // Media preview state
+  const [previewMedia, setPreviewMedia] = useState<WorkspaceFile | null>(null);
+  const [previewMediaUrl, setPreviewMediaUrl] = useState<string | null>(null);
 
   // Storage files hook
   const {
@@ -79,12 +83,12 @@ export default function StorageSection({ workspaceId }: StorageSectionProps) {
     file.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  // File click handler with image preview
+  // File click handler with media preview
   const handleFileClick = useCallback(async (file: WorkspaceFile) => {
     const result = await baseHandleFileClick(file);
-    if (result?.isImage) {
-      setPreviewImage(file);
-      setPreviewImageUrl(result.imageUrl);
+    if (result?.isMedia) {
+      setPreviewMedia(file);
+      setPreviewMediaUrl(result.mediaUrl);
     }
   }, [baseHandleFileClick]);
 
@@ -121,10 +125,30 @@ export default function StorageSection({ workspaceId }: StorageSectionProps) {
     }
   }, [renameTarget, handleRenameFile]);
 
-  // Close image preview
-  const closeImagePreview = useCallback(() => {
-    setPreviewImage(null);
-    setPreviewImageUrl(null);
+  // Delete handlers
+  const openDeleteModal = useCallback((file: WorkspaceFile) => {
+    setDeleteTarget(file);
+    setShowDeleteModal(true);
+  }, []);
+
+  const handleDelete = useCallback(async () => {
+    if (!deleteTarget) return;
+    setIsDeleting(true);
+    try {
+      await handleDeleteFile(deleteTarget);
+      setShowDeleteModal(false);
+      setDeleteTarget(null);
+    } catch (error) {
+      console.error("Failed to delete file:", error);
+    } finally {
+      setIsDeleting(false);
+    }
+  }, [deleteTarget, handleDeleteFile]);
+
+  // Close media preview
+  const closeMediaPreview = useCallback(() => {
+    setPreviewMedia(null);
+    setPreviewMediaUrl(null);
   }, []);
 
   return (
@@ -188,17 +212,19 @@ export default function StorageSection({ workspaceId }: StorageSectionProps) {
           <FileListView
             files={filteredFiles}
             selectedFile={selectedFile}
+            workspaceId={workspaceId}
             onFileClick={handleFileClick}
             onRename={openRenameModal}
-            onDelete={handleDeleteFile}
+            onDelete={openDeleteModal}
           />
         ) : (
           <FileGridView
             files={filteredFiles}
             selectedFile={selectedFile}
+            workspaceId={workspaceId}
             onFileClick={handleFileClick}
             onRename={openRenameModal}
-            onDelete={handleDeleteFile}
+            onDelete={openDeleteModal}
           />
         )}
       </div>
@@ -219,10 +245,18 @@ export default function StorageSection({ workspaceId }: StorageSectionProps) {
         isRenaming={isCreating}
       />
 
-      <ImagePreviewModal
-        file={previewImage}
-        imageUrl={previewImageUrl}
-        onClose={closeImagePreview}
+      <DeleteModal
+        isOpen={showDeleteModal}
+        file={deleteTarget}
+        onClose={() => { setShowDeleteModal(false); setDeleteTarget(null); }}
+        onDelete={handleDelete}
+        isDeleting={isDeleting}
+      />
+
+      <MediaPreviewModal
+        file={previewMedia}
+        mediaUrl={previewMediaUrl}
+        onClose={closeMediaPreview}
       />
     </div>
   );
